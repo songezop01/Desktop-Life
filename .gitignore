@@ -1,0 +1,24 @@
+tools/
+**/bin/
+**/obj/
+artifacts/
+data/*
+!data/README.md
+.vs/
+**/__pycache__/
+**/TestResults/
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+*.pfx
+*.p12
+*.pem
+*.log
+organism*.json*
+desktop-icons-backup*.json*
+settings.damaged-*
+# Local operational history; public architecture lives in docs/DEVELOPING.md.
+CODEX_CONTEXT.md
+**/*_wpftmp.csproj

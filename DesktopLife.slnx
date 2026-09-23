@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DesktopLife.App/DesktopLife.App.csproj" />
+    <Project Path="src/DesktopLife.ConnectomeTool/DesktopLife.ConnectomeTool.csproj" />
+    <Project Path="src/DesktopLife.Core/DesktopLife.Core.csproj" />
+    <Project Path="src/DesktopLife.ExperimentalConnectome/DesktopLife.ExperimentalConnectome.csproj" />
+    <Project Path="src/DesktopLife.Windows/DesktopLife.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DesktopLife.SensorSmoke/DesktopLife.SensorSmoke.csproj" />
+    <Project Path="tests/DesktopLife.Tests/DesktopLife.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>disable</ImplicitUsings><ApplicationManifest>app.manifest</ApplicationManifest><ApplicationIcon>Assets/DesktopLife.ico</ApplicationIcon><PlatformTarget>x64</PlatformTarget><Product>Desktop Life 桌面寵物</Product><Description>本機桌面寵物與陪伴房間</Description><Version>0.5.0</Version><AssemblyVersion>0.5.0.0</AssemblyVersion><FileVersion>0.5.0.0</FileVersion></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../DesktopLife.Core/DesktopLife.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../DesktopLife.Windows/DesktopLife.Windows.csproj" /></ItemGroup>
+
+</Project>
