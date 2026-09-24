@@ -22,8 +22,7 @@ public partial class MainWindow
         if(!result.Accepted)return;
         Life.ApplyCare(result.State);
         SetPaused(false);automaticActions=true;Pet.AllowCursorAttraction=QuietMode.IsChecked!=true;
-        runningAction?.Stop();runningAction=new(result.Action);runningAction.Start(Pet);
-        Pet.ShowCareProp(kind);
+        runningAction?.Stop();runningAction=null;Pet.Bond=Learning.State.Companion.Bond;Pet.BeginCare(kind,result.Action);
         careUntil=lifeClock.Elapsed.TotalSeconds+(kind==CareKind.Rest?90:kind==CareKind.Play?20:8);
         ShowHomeostasis();ShowCompanion();SavePetState();
     }
@@ -50,9 +49,10 @@ public partial class MainWindow
     private void TickCompanion()
     {
         Pet.EmotionalState=Life.State;
+        Pet.Bond=Learning.State.Companion.Bond;
         var away=LatestEnvironment?.IdleSeconds.Value is >300;
         if(wasAway&&LatestEnvironment?.IdleSeconds.Value is <=300&&automaticActions&&!aiPaused&&lifeClock.Elapsed.TotalSeconds>careUntil&&!Pet.Interacting)
-        {runningAction=new(BodyAction.Greet);runningAction.Start(Pet);careUntil=lifeClock.Elapsed.TotalSeconds+6;Pet.Say("你回來啦！我有乖乖等你。",5);}
+        {if(Pet.RequestAction(Learning.State.Companion.Bond>=65?BodyAction.Nuzzle:BodyAction.Greet,BehaviorInterruptReason.Stimulus)){runningAction=null;careUntil=lifeClock.Elapsed.TotalSeconds+6;Pet.Say(Learning.State.Companion.Bond>=65?"你回來了，我想靠近你。":"你回來啦！",5);}}
         wasAway=away;
         if(lifeClock.Elapsed.TotalSeconds-lastThought>100&&QuietMode.IsChecked!=true&&!aiPaused)
         {lastThought=lifeClock.Elapsed.TotalSeconds;Pet.Say(Life.State.Hunger>65?"肚子咕嚕咕嚕……":Life.State.Fatigue>75?"眼皮變重了……":Life.State.Loneliness>60?"可以陪我一下嗎？":"有你在，這裡就是我的家。",5);}
@@ -63,7 +63,7 @@ public partial class MainWindow
         if(!IsVisible)return;
         var c=Learning.State.Companion;
         CompanionTitle.Text=$"{c.Name}的小日子";
-        BondStatus.Text=$"{c.Relationship} · 親密度 {c.Bond:F1} / 100 · {CompanionCare.Mood(Life.State)}";
+        BondStatus.Text=$"{c.Relationship} · {CompanionCare.Mood(Life.State)}";
         Memories.Text=c.Memories.Count==0?"第一頁還空著，從一次摸摸開始。":string.Join("\n",c.Memories.TakeLast(6).Reverse().Select(m=>$"{m.At.ToLocalTime():MM/dd HH:mm}  {m.Text}"));
     }
     public void RenderCompanionPanel(string path)

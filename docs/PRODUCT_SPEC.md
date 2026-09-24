@@ -1,3 +1,5 @@
+> 歷史研究文件：此內容不代表目前產品方向。正式產品不再採用果蠅神經網路或硬體餵養；以 [CURRENT_PRODUCT_DIRECTION](CURRENT_PRODUCT_DIRECTION.md) 為準。
+
 你現在是本專案的主要軟體工程師、架構師與技術執行者。
 
 請直接在目前工作目錄內建立、修改、Build、Test、Debug 專案。

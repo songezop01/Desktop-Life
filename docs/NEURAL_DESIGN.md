@@ -1,3 +1,5 @@
+> 歷史研究文件：此內容不代表目前產品方向。正式產品不再採用果蠅神經網路或硬體餵養；以 [CURRENT_PRODUCT_DIRECTION](CURRENT_PRODUCT_DIRECTION.md) 為準。
+
 # 神經設計與科學界線
 
 本軟體不是完整果蠅大腦、意識或生物精確行為的模擬器。

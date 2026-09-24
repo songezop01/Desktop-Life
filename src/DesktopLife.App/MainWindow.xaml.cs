@@ -90,7 +90,7 @@ public partial class MainWindow : Window
     {
         if (suspendedAt is not null) return;
         var elapsed = lifeClock.Elapsed;
-        Life.AdvanceCompanion(elapsed-lastLifeTick,Pet.CurrentAction,LatestEnvironment?.IdleSeconds.Value is <300);
+        Life.AdvanceCompanion(elapsed-lastLifeTick,Pet.PhysiologicalAction,LatestEnvironment?.IdleSeconds.Value is <300);
         TickCompanion();
         lastLifeTick = elapsed;
         ShowHomeostasis();

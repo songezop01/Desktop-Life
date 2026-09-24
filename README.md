@@ -1,6 +1,8 @@
-# Desktop Life · 陪伴房間 0.5
+# Desktop Life · 陪伴房間 0.6
 
 一隻住在桌面的小寵物。Windows 11 x64、本機運作，使用照顧需求、個性、親密度與活動偏好決定行為。已停止果蠅／FlyWire 神經方案，不再以電腦負載餵養。
+
+V0.6 加入玩耍、入睡／醒來、摸摸與理毛的連續行為，短期注意力與興趣，以及家具導航失敗恢復。詳見 [本次更新與驗證](docs/UPDATE_06.md) 和 [產品方向](docs/CURRENT_PRODUCT_DIRECTION.md)。
 
 ## 開始陪伴
 

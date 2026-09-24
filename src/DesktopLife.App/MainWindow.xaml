@@ -4,7 +4,7 @@
  <Style TargetType="ComboBox"><Setter Property="Padding" Value="8,6"/><Setter Property="Margin" Value="0,4,0,10"/></Style>
 <local:UiText x:Key="UiText"/><DataTemplate x:Key="EnumLabel"><TextBlock Text="{Binding Converter={StaticResource UiText}}"/></DataTemplate></Window.Resources>
  <Grid Margin="32"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <StackPanel><TextBlock Text="DESKTOP LIFE  /  陪伴房間 0.5" Foreground="#5D826B" FontSize="12"/><TextBlock x:Name="CompanionTitle" Text="一隻小寵物，一起過日子。" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/><TextBlock Text="牠會餓、會睏，也會慢慢記得你的溫柔。" Foreground="#747B73"/></StackPanel>
+  <StackPanel><TextBlock Text="DESKTOP LIFE  /  陪伴房間 0.6" Foreground="#5D826B" FontSize="12"/><TextBlock x:Name="CompanionTitle" Text="一隻小寵物，一起過日子。" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/><TextBlock Text="牠會餓、會睏，也會慢慢記得你的溫柔。" Foreground="#747B73"/></StackPanel>
   <Border Grid.Row="1" Margin="0,20" Padding="20" CornerRadius="12" Background="#FFFDFA"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
    <TextBlock Text="今天，想怎麼陪牠？" FontSize="20" FontWeight="SemiBold"/>
    <TextBlock x:Name="BondStatus" Margin="0,8,0,14" Foreground="#62846D"/>
@@ -40,6 +40,7 @@
    <WrapPanel><Button Content="與快捷圖示互動一次" Click="PlayWithShortcut" Padding="8,4" Margin="0,0,8,0"/><Button Content="更新備份為目前排列" Click="UpdateDesktopIconBackup"/><Button Content="一鍵恢復桌面圖示排列" Click="RestoreDesktopIcons" Padding="8,4"/></WrapPanel>
    <TextBlock x:Name="IconStatus" Text="圖示互動預設關閉；啟用後會備份排列，正常退出時嘗試恢復。" TextWrapping="Wrap" Foreground="#717970" Margin="0,6,0,12"/>
    <TextBlock Text="按主控台右上角 X 時"/><ComboBox x:Name="CloseOptions" ItemTemplate="{StaticResource EnumLabel}" SelectionChanged="ChangeCloseBehavior"/><TextBlock Text="桌寵外觀"/><ComboBox x:Name="Appearances" ItemTemplate="{StaticResource EnumLabel}" SelectionChanged="ChangePresentation" Margin="0,4,0,12"/>
+   <Expander Header="進階／診斷" IsExpanded="False" Margin="0,12"><StackPanel>
    <TextBlock x:Name="BrainStatus" Foreground="#426B54" FontSize="16" TextWrapping="Wrap" Margin="0,8"/>
    <TextBlock x:Name="PersonalityStatus" TextWrapping="Wrap" Foreground="#717970" Margin="0,0,0,14"/>
    <Expander Header="習慣與創作偏好"><StackPanel><TextBlock x:Name="ActionScores" TextWrapping="Wrap"/><TextBlock x:Name="StyleStatus" TextWrapping="Wrap"/><TextBlock x:Name="LearningStatus" TextWrapping="Wrap"/><TextBlock x:Name="PreferenceStatus" TextWrapping="Wrap"/></StackPanel></Expander>
@@ -48,6 +49,8 @@
    <TextBlock x:Name="FeedingStatus" Margin="0,8,0,12" TextWrapping="Wrap" Foreground="#717970"/>
    <ItemsControl x:Name="HomeostasisRows"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="175"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Value}" Height="7" VerticalAlignment="Center" Foreground="#426B54" Background="#E7E9E0" BorderThickness="0"/><TextBlock Grid.Column="2" Text="{Binding Value, StringFormat={}{0:F2}}" HorizontalAlignment="Right" Foreground="#426B54"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
    <TextBlock Text="所有值 0–100；飢餓、無聊、孤單、疲勞越高代表需求越高。" Foreground="#717970" TextWrapping="Wrap" Margin="0,10,0,4"/>
+   <TextBlock Text="手動行為預覽"/><ComboBox x:Name="Actions" ItemTemplate="{StaticResource EnumLabel}" Width="110" SelectionChanged="SelectAction" Margin="0,0,6,4"/>
+   </StackPanel></Expander>
    <TextBlock x:Name="SaveStatus" Text="生理狀態已載入；每 60 秒與正常關閉時保存。" Foreground="#717970" TextWrapping="Wrap"/>
    <Expander Header="存檔與備份" Margin="0,10"><StackPanel>
     <TextBlock x:Name="StorageStatus" TextWrapping="Wrap" Margin="0,6"/>
@@ -58,7 +61,7 @@
    <Separator Margin="0,14"/>
    <TextBlock x:Name="SettingsText" TextWrapping="Wrap" Foreground="#717970"/>
   </StackPanel></ScrollViewer></Border>
-  <StackPanel Grid.Row="2"><WrapPanel><Button Content="顯示角色" Click="ShowPet" Padding="8,4" Margin="0,0,6,4"/><Button Content="隱藏角色" Click="HidePet" Padding="8,4" Margin="0,0,6,4"/><Button Content="重設位置" Click="ResetPet" Padding="8,4" Margin="0,0,6,4"/><Button Content="清除作品" Click="ClearArt" Padding="6,4"/><Button Content="保留作品" Click="KeepArt" Padding="6,4"/><Button Content="隱藏／顯示作品" Click="ToggleArt" Padding="6,4"/><Button Content="暫停／恢復自主行為" Click="PauseAi" Padding="6,4"/><Button Content="自動" Click="AutoPet" Padding="8,4" Margin="0,0,6,4"/><ComboBox x:Name="Actions" ItemTemplate="{StaticResource EnumLabel}" Width="110" SelectionChanged="SelectAction" Margin="0,0,6,4"/></WrapPanel><TextBlock x:Name="HitStatus" Text="拖曳可抱起桌寵，放開就落地；輕點給牠摸摸。也可以拖球邀牠玩。" Foreground="#717970" TextWrapping="Wrap"/></StackPanel>
+  <StackPanel Grid.Row="2"><WrapPanel><Button Content="顯示角色" Click="ShowPet" Padding="8,4" Margin="0,0,6,4"/><Button Content="隱藏角色" Click="HidePet" Padding="8,4" Margin="0,0,6,4"/><Button Content="重設位置" Click="ResetPet" Padding="8,4" Margin="0,0,6,4"/><Button Content="清除作品" Click="ClearArt" Padding="6,4"/><Button Content="保留作品" Click="KeepArt" Padding="6,4"/><Button Content="隱藏／顯示作品" Click="ToggleArt" Padding="6,4"/><Button Content="暫停／恢復自主行為" Click="PauseAi" Padding="6,4"/><Button Content="自動" Click="AutoPet" Padding="8,4" Margin="0,0,6,4"/></WrapPanel><TextBlock x:Name="HitStatus" Text="拖曳可抱起桌寵，放開就落地；輕點給牠摸摸。也可以拖球邀牠玩。" Foreground="#717970" TextWrapping="Wrap"/></StackPanel>
  </Grid>
 </Window>
 

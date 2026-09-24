@@ -2,6 +2,7 @@ $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $dotnet=Join-Path $root 'tools/dotnet/dotnet.exe'
 $process=Start-Process -FilePath $dotnet -ArgumentList @('"src/DesktopLife.App/bin/Release/net10.0-windows/DesktopLife.App.dll"','--performance-test') -WorkingDirectory $root -WindowStyle Hidden -PassThru
+$handle=$process.Handle
 $watch=[Diagnostics.Stopwatch]::StartNew()
 $samples=[Collections.Generic.List[object]]::new()
 $lastCpu=$null
@@ -26,7 +27,7 @@ $result=[pscustomobject]@{
     MeanOneCoreCpuPercent=($samples|Measure-Object OneCoreCpuPercent -Average).Average;
     PeakWorkingSetMB=($samples|Measure-Object WorkingSetMB -Maximum).Maximum;
     FirstPrivateMB=$samples[0].PrivateMB;LastPrivateMB=$samples[$samples.Count-1].PrivateMB;
-    Note='45-second Hybrid idle action run; control panel hidden after 3 sec; sensors and real connectome enabled. Short test, not a long-duration leak test.'
+    Note='45-second local companion idle action run; control panel hidden after 3 sec; no connectome or hardware feeding. Short test, not a long-duration leak test.'
 }
 New-Item -ItemType Directory -Force (Join-Path $root 'artifacts') | Out-Null
 $result | ConvertTo-Json | Set-Content (Join-Path $root 'artifacts/performance.json') -Encoding utf8

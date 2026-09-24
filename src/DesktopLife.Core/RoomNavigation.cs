@@ -1,9 +1,17 @@
 namespace DesktopLife.Core;
 
-public enum NavigationPhase { Idle,Approaching,Crouching,Airborne,Landing,Unreachable }
+public enum NavigationPhase { Idle,Approaching,Crouching,Airborne,Landing,Unreachable,Orienting,Recovering }
 public readonly record struct RoomWaypoint(double TakeoffX,double LandingX,double LandingY,double SourceY,bool Drops);
 public static class RoomNavigation
 {
+    public static double EscapeX(IReadOnlyList<RoomPlatform> platforms,BodyBounds bounds,double center,double feet)
+    {
+        var cover=platforms.Where(p=>center>=p.X&&center<=p.X+p.Width&&p.HeightAt(center)<feet-8).ToArray();
+        var min=bounds.Left+58;var max=bounds.Left+Math.Max(58,bounds.Width-58);
+        var choices=cover.SelectMany(p=>new[]{p.X-68,p.X+p.Width+68}).Concat(new[]{center-150,center+150}).Where(x=>x>=min&&x<=max)
+            .Where(x=>!cover.Any(p=>x>=p.X-58&&x<=p.X+p.Width+58)).OrderBy(x=>Math.Abs(x-center)).ToArray();
+        return choices.Length>0?choices[0]:Math.Clamp(center<bounds.Left+bounds.Width/2?center+150:center-150,min,max);
+    }
     public const double MaximumRise=175;
     public static IReadOnlyList<RoomWaypoint>? Plan(IReadOnlyList<RoomPlatform> furniture,BodyBounds bounds,double x,double feet,double goalX,double goalY)
     {
@@ -33,8 +41,11 @@ public static class RoomNavigation
     private static bool Edge(RoomPlatform from,RoomPlatform to,BodyBounds bounds,double goalX,out RoomWaypoint step)
     {
         step=default;var margin=Math.Min(20,to.Width/3);
-        var landing=Math.Clamp(goalX,to.X+margin,to.X+to.Width-margin);
-        var takeoff=Math.Clamp(landing,from.X+Math.Min(10,from.Width/3),from.X+from.Width-Math.Min(10,from.Width/3));
+        var landingMin=Math.Max(to.X+margin,bounds.Left+58);var landingMax=Math.Min(to.X+to.Width-margin,bounds.Left+bounds.Width-58);
+        var takeoffMin=Math.Max(from.X+Math.Min(10,from.Width/3),bounds.Left+58);var takeoffMax=Math.Min(from.X+from.Width-Math.Min(10,from.Width/3),bounds.Left+bounds.Width-58);
+        if(landingMin>landingMax||takeoffMin>takeoffMax)return false;
+        var landing=Math.Clamp(goalX,landingMin,landingMax);
+        var takeoff=Math.Clamp(landing,takeoffMin,takeoffMax);
         var sourceY=from.HeightAt(takeoff);var destinationY=to.HeightAt(landing);var rise=sourceY-destinationY;
         if(rise>MaximumRise||rise< -420)return false;
         if(rise< -8)
