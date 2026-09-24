@@ -8,6 +8,7 @@ public sealed class HangingToy
     public const double MaximumAngle = .95;
     public double Angle { get; private set; } = .12;
     public double AngularVelocity { get; private set; }
+    public bool IsResting => Angle == 0 && AngularVelocity == 0;
     public double X => Math.Sin(Angle) * Length;
     public double Y => Math.Cos(Angle) * Length;
 
@@ -20,6 +21,8 @@ public sealed class HangingToy
     public void Step(double seconds)
     {
         if (!double.IsFinite(seconds) || seconds < 0) throw new ArgumentOutOfRangeException(nameof(seconds));
+        if(IsResting)return;
+        if(Math.Abs(Angle)<.0002&&Math.Abs(AngularVelocity)<.0002){Angle=AngularVelocity=0;return;}
         var count = Math.Max(1, (int)Math.Ceiling(Math.Min(seconds, .1) / .004));
         var dt = Math.Min(seconds, .1) / count;
         for (var i = 0; i < count; i++)

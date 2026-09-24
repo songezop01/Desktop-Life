@@ -52,7 +52,7 @@ public sealed class RoomWindow : Window
     };
     public void StepTeaser(double seconds)
     {
-        if(Teaser is null)return;
+        if(Teaser is null||seconds>0&&Teaser.IsResting)return;
         Teaser.Step(seconds);
         teaserString.X1=45;teaserString.Y1=31;
         teaserString.X2=45+Teaser.X;teaserString.Y2=31+Teaser.Y;

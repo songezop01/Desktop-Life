@@ -26,6 +26,7 @@ public sealed class InteractiveToy(double x,double y)
     public double VelocityX=>physics.VX;
     public double VelocityY=>physics.VY;
     public bool Held {get;set;}
+    public bool IsResting=>!Held&&physics.Grounded&&Math.Abs(VelocityX)<.1&&Math.Abs(VelocityY)<.1;
     public void Place(double x,double y,BodyBounds bounds)
     {physics.X=Math.Clamp(x,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-Size));physics.Y=Math.Clamp(y,bounds.Top,bounds.Top+Math.Max(0,bounds.Height-Size));physics.VX=physics.VY=0;}
     public void Kick(double x,double y)

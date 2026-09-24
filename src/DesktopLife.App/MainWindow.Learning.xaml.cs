@@ -20,6 +20,7 @@ public partial class MainWindow
         Pet.RestoreRoom(Learning.State.Room,previousWorkArea);
         Pet.Art.RestoreWorks(Learning.State.Artworks);
         Pet.ParameterFactory=CreateParameters;
+        Pet.BehaviorPersonality=personality;Pet.Bond=Learning.State.Companion.Bond;
         Pet.CreativeAction+=(action,x,y)=>
         {
             Pet.HasCreativeOutput=Pet.Art.Create(action,Pet.Parameters,Learning.State.Variation,x,y);
@@ -31,7 +32,8 @@ public partial class MainWindow
         Pet.InteractionRequested+=action=>
         {
             if(aiPaused||Pet.Interacting)return;
-            runningAction?.Stop();runningAction=new(action);runningAction.Start(Pet);Learning.Trace.Clear();
+            if(!Pet.RequestAction(action,BehaviorInterruptReason.Stimulus))return;
+            runningAction?.Stop();runningAction=null;Learning.Trace.Clear();
         };
         learningTimer.Tick += (_,_) => ObserveAction();
         Loaded += (_,_) => learningTimer.Start();

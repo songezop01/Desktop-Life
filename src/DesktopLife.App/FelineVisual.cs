@@ -13,6 +13,10 @@ public sealed class FelineVisual : FrameworkElement
     public Point? RenderedPawTip { get; private set; }
 
     private BodyAction action;
+    public PersonalityProfile Personality { get; set; } = new();
+    private readonly MicroBehavior micro = new(Random.Shared.Next());
+    private MicroPose microPose;
+    private BehaviorPhase? behaviorPhase;
     private double time, direction = 1, gaze;
     private Point? requestedPaw;
     private PoseShape shape;
@@ -39,9 +43,11 @@ public sealed class FelineVisual : FrameworkElement
     private static readonly Brush EarShadow = Solid("#B87864"), Whisker = Solid("#CDBB99");
     private static readonly Dictionary<(Brush, double), Pen> Pens = [];
 
-    public void Pose(BodyAction value, double seconds, double facing, double look, Point? pawTarget = null,double? actionSeconds=null,NavigationPhase movementPhase=NavigationPhase.Idle)
+    public void Pose(BodyAction value, double seconds, double facing, double look, Point? pawTarget = null,double? actionSeconds=null,NavigationPhase movementPhase=NavigationPhase.Idle,BehaviorPhase? phase=null)
     {
         var elapsed = seconds - time;
+        behaviorPhase=phase;
+        microPose=micro.Step(Math.Clamp(elapsed,0,.1),Personality,value==BodyAction.Sleep,pawTarget is not null || movementPhase!=NavigationPhase.Idle || value is BodyAction.Groom or BodyAction.Stretch);
         actionAge=actionSeconds??(action==value?Math.Max(0,actionAge+elapsed):0);
         action = value; time = seconds;movement=movementPhase;
         var desired=facing<0?-1d:1d;
@@ -83,6 +89,8 @@ public sealed class FelineVisual : FrameworkElement
         }
         if(movement is NavigationPhase.Crouching or NavigationPhase.Landing)
             target=new(49,123,15,82,107,4);
+        if(behaviorPhase==BehaviorPhase.GroomBody)target=target with{HeadX=51,HeadY=109,HeadAngle=-22};
+        target=target with{BodyX=target.BodyX+microPose.Weight,HeadAngle=target.HeadAngle+microPose.Head};
         target=target with{HeadX=Lerp(target.HeadX,58,backBlend*.5)};
         // Blend the torso/head, not planted feet. Equal/earlier time means a deterministic
         // diagnostic sample and snaps directly to its pose, independent of previous poses.
@@ -276,7 +284,7 @@ public sealed class FelineVisual : FrameworkElement
         dc.PushTransform(rotation); hitTransform = rotation.Value;
         var alert = IsPlaying || action is BodyAction.ObserveCursor or BodyAction.ChaseCursor or BodyAction.Greet;
         var flattened = action is BodyAction.AvoidCursor or BodyAction.Fall;
-        var earFlick = Math.Pow(Math.Max(0, Math.Sin(time * 1.7)), 12) * Math.Sin(time * 21) * 8;
+        var earFlick = microPose.Ear;
         DrawEar(dc, hx - 14, hy - 13, -12 + gaze * 6 + earFlick + (flattened ? -28 : 0));
         DrawEar(dc, hx + 14, hy - 13, 13 + gaze * 8 - earFlick * .55 + (flattened ? 28 : 0));
         Shape(dc, c =>
@@ -302,8 +310,7 @@ public sealed class FelineVisual : FrameworkElement
         Curve(dc, new(hx + 9, hy - 16), new(hx + 6, hy - 14), new(hx + 7, hy - 10), new(hx + 5, hy - 9), PenFor(Stripe, 2));
         Line(dc, new(hx - 21, hy + 2), new(hx - 16, hy + 4), SoftStripe, 1.8);
         Line(dc, new(hx + 21, hy + 2), new(hx + 16, hy + 4), SoftStripe, 1.8);
-        var blinkCycle = time % 5.7;
-        var blink = blinkCycle < .17 ? Math.Sin(blinkCycle / .17 * Math.PI) : 0;
+        var blink = microPose.Blink;
         var relaxed = action is BodyAction.Nuzzle or BodyAction.Groom or BodyAction.RestInCorner;
         var lid = relaxed ? .42 + Math.Sin(time * 1.6) * .12 : blink;
         if (action == BodyAction.Nuzzle) lid = Math.Max(lid, .87);

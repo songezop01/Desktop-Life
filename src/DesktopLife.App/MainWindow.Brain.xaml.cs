@@ -13,7 +13,11 @@ public partial class MainWindow
     private BrainOutput currentOutput = new(new Dictionary<BehaviorDrive,double>(),[],[]);
     private void TickBrain(double elapsed)
     {
-        if(Pet.Interacting||lifeClock.Elapsed.TotalSeconds<careUntil)return;
+        if(Pet.Interacting)return;
+        if((Life.State.Energy<=10||Life.State.Fatigue>=95)&&Pet.CurrentAction!=BodyAction.Sleep)
+        {Pet.RequestAction(BodyAction.Sleep,BehaviorInterruptReason.CriticalNeed);return;}
+        if(lifeClock.Elapsed.TotalSeconds<careUntil)return;
+        if(Pet.SequenceCommitted)return;
         var environment=LatestEnvironment is {} fresh && DateTimeOffset.UtcNow-fresh.Timestamp<=TimeSpan.FromSeconds(3)?fresh:null;
         var context=new EnvironmentContext(Life.State,personality,environment,ActionCatalog.Context(environment,DateTimeOffset.UtcNow),Affordances:Pet.SenseAffordances());
         currentOutput=utilityBrain.Evaluate(context);

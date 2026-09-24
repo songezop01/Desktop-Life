@@ -28,7 +28,7 @@ public partial class PetWindow
     public RoomState CaptureRoom()=>new(){WorkArea=Bounds(),Ball=new(Ball.Model.X,Ball.Model.Y),Square=new(Square.Model.X,Square.Model.Y),Items=Furniture.Select(f=>f.Item).Concat(ExtraToys.Select(t=>t.RoomItem! with{X=t.Model.X,Y=t.Model.Y})).ToList()};
     public void RemapWorkspace(BodyBounds from,BodyBounds to)
     {
-        CancelRoute();
+        CancelRoute();sequence?.Interrupt(BehaviorInterruptReason.Safety);
         var p=RoomCoordinates.Rehome(new(body.X,body.Y),from,to,116,144);body.Place(p.X,p.Y,to);petGravity.VX=petGravity.VY=0;
         foreach(var toy in AllToys){p=RoomCoordinates.Rehome(new(toy.Model.X,toy.Model.Y),from,to,40,40);toy.Model.Place(p.X,p.Y,to);toy.Step(0);}
         foreach(var furniture in Furniture){p=RoomCoordinates.Rehome(new(furniture.Item.X,furniture.Item.Y),from,to,furniture.Width,furniture.Height);furniture.Relocate(p.X,p.Y);}
@@ -43,7 +43,7 @@ public partial class PetWindow
         {
             var toy=new ToyWindow(true,Bounds()){RoomItem=item,Title="毛線球"};toy.Model.Place(item.X,item.Y,Bounds());
             toy.Rang+=strength=>SoundRequested?.Invoke(PetSound.Bell,strength);
-            toy.SetToyAppearance(item.Kind);toy.Played+=()=>{playTarget=toy;InteractionRequested?.Invoke(BodyAction.PlayToy);RoomChanged?.Invoke();};
+            toy.SetToyAppearance(item.Kind);toy.Played+=()=>{requestedToy=toy;InteractionRequested?.Invoke(BodyAction.PlayToy);RoomChanged?.Invoke();};
             toy.RemoveRequested+=()=>{ExtraToys.Remove(toy);toy.Close();RoomChanged?.Invoke();};ExtraToys.Add(toy);
         }
         else
@@ -111,7 +111,7 @@ public partial class PetWindow
     private ObjectApproach ToyApproach(ToyWindow toy)
     {
         var bounds=Bounds();var tx=toy.Model.X+20;var petCenter=body.X+58;
-        var left=tx-68-58;var right=tx+68-58;
+        var left=tx-50-58;var right=tx+50-58;
         var px=petCenter<tx?left:right;
         if(px<bounds.Left)px=right;if(px>bounds.Left+bounds.Width-116)px=left;
         px=Math.Clamp(px,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-116));
