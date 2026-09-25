@@ -16,7 +16,7 @@ public static class RoomNavigation
     public static IReadOnlyList<RoomWaypoint>? Plan(IReadOnlyList<RoomPlatform> furniture,BodyBounds bounds,double x,double feet,double goalX,double goalY)
     {
         var nodes=furniture.Where(p=>p.Width>=24&&p.Y>=bounds.Top+DesktopBody.Height).Append(new RoomPlatform(bounds.Left,bounds.Width,bounds.Top+bounds.Height,bounds.Top+bounds.Height)).ToArray();
-        int Find(double px,double py)=>Array.FindIndex(nodes,p=>px>=p.X-2&&px<=p.X+p.Width+2&&Math.Abs(p.HeightAt(px)-py)<8);
+        int Find(double px,double py)=>Array.FindIndex(nodes,p=>px>=p.X-2&&px<=p.X+p.Width+2&&Math.Abs(p.HeightAt(px)-py)<4);
         var source=Find(x,feet);var destination=Find(goalX,goalY);
         if(source<0||destination<0)return null;
         if(source==destination)return [];

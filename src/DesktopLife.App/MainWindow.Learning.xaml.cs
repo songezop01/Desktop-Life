@@ -17,6 +17,7 @@ public partial class MainWindow
         var previousWorkArea=DisplayWorkspace.Bounds;
         DisplayWorkspace.Select(settings.ActiveDisplay);
         Pet.RemapWorkspace(previousWorkArea,DisplayWorkspace.Bounds);
+        Pet.AttachHabits(Learning.State.LocationHabits);
         Pet.RestoreRoom(Learning.State.Room,previousWorkArea);
         Pet.Art.RestoreWorks(Learning.State.Artworks);
         Pet.ParameterFactory=CreateParameters;

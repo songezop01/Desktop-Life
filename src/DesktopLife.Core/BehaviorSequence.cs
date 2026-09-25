@@ -1,7 +1,7 @@
 namespace DesktopLife.Core;
 
-public enum SequenceKind { Play, Sleep, Stroke, SelfGroom, Brush }
-public enum BehaviorPhase { Notice, Orient, Watch, Search, Approach, Inspect, Prepare, Crouch, Paw, Contact, Recover, Evaluate, Sit, LieDown, Curl, Sleep, Wake, Stretch, Hesitate, Accept, React, LickPaw, WashFace, GroomBody, Pause, Relax, Lean, Complete }
+public enum SequenceKind { Play, Sleep, Stroke, SelfGroom, Brush, Box, Scratch, Observe }
+public enum BehaviorPhase { Notice, Orient, Watch, Search, Approach, Inspect, Prepare, Crouch, Paw, Contact, Recover, Evaluate, Sit, LieDown, Curl, Sleep, Wake, Stretch, Hesitate, Accept, React, LickPaw, WashFace, GroomBody, Pause, Relax, Lean, Complete, Enter, Settle, Hide, Peek, Exit, Rest, Scratch, Knead, WatchBall }
 public enum BehaviorInterruptReason { Opportunity, Stimulus, Care, CriticalNeed, TargetLost, Safety }
 public readonly record struct SequenceContext(bool TargetExists=true,bool Reached=false,bool Contact=false,bool NavigationFailed=false,bool Grounded=true,bool Rested=false,double TargetSpeed=0)
 {public SequenceContext():this(true,false,false,false,true,false,0){}}
@@ -31,9 +31,13 @@ public sealed class BehaviorSequence
     private bool ending;
     private readonly double bond;
     private double stillTime;
-    public BehaviorSequence(SequenceKind kind,PersonalityProfile personality,double bond,string? targetId=null)
+    private readonly int wakeVariant;
+    public FurnitureKind? LocationKind {get;}
+    public double InspectionDuration {get;}
+    public BehaviorSequence(SequenceKind kind,PersonalityProfile personality,double bond,string? targetId=null,FurnitureKind? locationKind=null,double familiarity=0,int wakeVariant=0)
     {
         if(!Enum.IsDefined(kind)||!double.IsFinite(bond))throw new ArgumentOutOfRangeException(nameof(kind));
+        this.wakeVariant=Math.Clamp(wakeVariant,0,2);LocationKind=locationKind;InspectionDuration=.45+(.75+personality.Timidity*.6)*(1-Math.Clamp(familiarity,0,1));
         Kind=kind;this.bond=Math.Clamp(bond,0,100);Style=SequenceStyle.From(personality,bond);TargetId=targetId;
         Phase=kind==SequenceKind.Sleep?BehaviorPhase.Search:kind==SequenceKind.SelfGroom?BehaviorPhase.Inspect:BehaviorPhase.Notice;
     }
@@ -46,7 +50,7 @@ public sealed class BehaviorSequence
             InterruptedBy=reason;return true;
         }
         if(reason==BehaviorInterruptReason.Opportunity)return false;
-        if(reason==BehaviorInterruptReason.Stimulus&&(Kind==SequenceKind.Sleep||Kind is SequenceKind.Stroke or SequenceKind.Brush||Age<3))return false;
+        if(reason==BehaviorInterruptReason.Stimulus&&(Kind==SequenceKind.Sleep||Kind is SequenceKind.Stroke or SequenceKind.Brush or SequenceKind.Box or SequenceKind.Scratch or SequenceKind.Observe||Age<3))return false;
         InterruptedBy=reason;ending=true;Set(Kind==SequenceKind.Sleep&&Phase==BehaviorPhase.Sleep?BehaviorPhase.Wake:BehaviorPhase.Recover);return true;
     }
     public void UseFallback(){TargetId=null;Set(BehaviorPhase.Inspect);}
@@ -75,20 +79,58 @@ public sealed class BehaviorSequence
                     case BehaviorPhase.Contact:
                         if(c.Contact){Contacts++;Set(BehaviorPhase.Recover);}else if(PhaseAge>.45)Set(BehaviorPhase.Recover);break;
                     case BehaviorPhase.Evaluate:
-                        if(PhaseAge>=.8)Set(Age>=Style.Interest||stillTime>7||Contacts>=3?BehaviorPhase.Complete:BehaviorPhase.Watch);break;
+                        if(PhaseAge>=.8)Set(Age>=Style.Interest||stillTime>7||Contacts>=3?BehaviorPhase.WatchBall:BehaviorPhase.Watch);break;
+                    case BehaviorPhase.WatchBall:After(4+Style.Watch,BehaviorPhase.Complete);break;
                 }break;
             case SequenceKind.Sleep:
                 switch(Phase)
                 {
                     case BehaviorPhase.Search:After(.4,TargetId is null?BehaviorPhase.Inspect:BehaviorPhase.Approach);break;
                     case BehaviorPhase.Approach:if(c.Reached&&c.Grounded)Set(BehaviorPhase.Inspect);break;
-                    case BehaviorPhase.Inspect:After(.8,BehaviorPhase.Sit);break;
+                    case BehaviorPhase.Inspect:if(c.Grounded)After(InspectionDuration,LocationKind==FurnitureKind.PetBed?BehaviorPhase.Settle:BehaviorPhase.Sit);break;
+                    case BehaviorPhase.Settle:After(.9,BehaviorPhase.Knead);break;
+                    case BehaviorPhase.Knead:After(1.8,BehaviorPhase.Sit);break;
                     case BehaviorPhase.Sit:After(.7,BehaviorPhase.LieDown);break;
                     case BehaviorPhase.LieDown:After(.9,BehaviorPhase.Curl);break;
                     case BehaviorPhase.Curl:After(.8,BehaviorPhase.Sleep);break;
                     case BehaviorPhase.Sleep:if(c.Rested&&PhaseAge>=Style.SleepDuration)Set(BehaviorPhase.Wake);break;
                     case BehaviorPhase.Wake:After(.9,BehaviorPhase.Stretch);break;
-                    case BehaviorPhase.Stretch:After(6,BehaviorPhase.Complete);break;
+                    case BehaviorPhase.Stretch:After(6,ending||wakeVariant==0?BehaviorPhase.Complete:wakeVariant==1?BehaviorPhase.LickPaw:BehaviorPhase.Watch);break;
+                    case BehaviorPhase.LickPaw:After(1.3,BehaviorPhase.WashFace);break;
+                    case BehaviorPhase.WashFace:After(1.8,BehaviorPhase.Complete);break;
+                    case BehaviorPhase.Watch:After(2.5,BehaviorPhase.Complete);break;
+                }break;
+            case SequenceKind.Observe:
+                switch(Phase)
+                {
+                    case BehaviorPhase.Notice:After(Style.Reaction,BehaviorPhase.Approach);break;
+                    case BehaviorPhase.Approach:if(c.Reached&&c.Grounded)Set(BehaviorPhase.Inspect);break;
+                    case BehaviorPhase.Inspect:After(InspectionDuration,BehaviorPhase.Watch);break;
+                    case BehaviorPhase.Watch:After(7+Style.Watch,BehaviorPhase.Complete);break;
+                }break;
+            case SequenceKind.Scratch:
+                switch(Phase)
+                {
+                    case BehaviorPhase.Notice:After(Style.Reaction,BehaviorPhase.Approach);break;
+                    case BehaviorPhase.Approach:if(c.Reached&&c.Grounded)Set(BehaviorPhase.Inspect);break;
+                    case BehaviorPhase.Inspect:After(InspectionDuration,BehaviorPhase.Prepare);break;
+                    case BehaviorPhase.Prepare:After(.5,BehaviorPhase.Scratch);break;
+                    case BehaviorPhase.Scratch:if(!c.Grounded){Interrupt(BehaviorInterruptReason.Safety);break;}After(2.5,BehaviorPhase.Stretch);break;
+                    case BehaviorPhase.Stretch:After(2,BehaviorPhase.Pause);break;
+                    case BehaviorPhase.Pause:if(PhaseAge>1){if(Contacts++==0)Set(BehaviorPhase.Scratch);else{ending=true;Set(BehaviorPhase.Recover);}}break;
+                }break;
+            case SequenceKind.Box:
+                switch(Phase)
+                {
+                    case BehaviorPhase.Notice:After(Style.Reaction,BehaviorPhase.Approach);break;
+                    case BehaviorPhase.Approach:if(c.Reached&&c.Grounded)Set(BehaviorPhase.Inspect);break;
+                    case BehaviorPhase.Inspect:After(InspectionDuration,BehaviorPhase.Enter);break;
+                    case BehaviorPhase.Enter:After(.8,BehaviorPhase.Settle);break;
+                    case BehaviorPhase.Settle:After(.8,BehaviorPhase.Hide);break;
+                    case BehaviorPhase.Hide:After(3,BehaviorPhase.Peek);break;
+                    case BehaviorPhase.Peek:After(2,BehaviorPhase.Rest);break;
+                    case BehaviorPhase.Rest:After(5,BehaviorPhase.Exit);break;
+                    case BehaviorPhase.Exit:if(c.Reached&&c.Grounded||PhaseAge>8){ending=true;Set(BehaviorPhase.Recover);}break;
                 }break;
             case SequenceKind.Stroke:
             case SequenceKind.Brush:

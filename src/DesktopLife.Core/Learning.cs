@@ -69,6 +69,7 @@ public sealed class LearningState
     public double[]? ConnectomeDeltas { get; set; }
     public long PositiveRewards { get; set; }
     public long Punishments { get; set; }
+    [JsonConverter(typeof(LocationHabitListConverter))] public List<LocationHabit> LocationHabits {get;set;}=[];
     public RoomState Room {get;set;}=new();
     public CompanionState Companion {get;set;}=new();
     public BehaviorVariationState Variation {get;set;}=new();
@@ -76,6 +77,7 @@ public sealed class LearningState
     {
         if(Variation is null)throw new InvalidDataException("缺少行為風格狀態。");
         Variation.Validate();
+        LocationHabits??=[];var habits=new RestSpotPreference();habits.Attach(LocationHabits);
         if(Companion is null)throw new InvalidDataException("缺少陪伴資料。");
         Companion.Validate();
         if(Room is null)throw new InvalidDataException("缺少房間資料。");Room.Validate();

@@ -3,6 +3,8 @@ using DesktopLife.Core;
 namespace DesktopLife.App;
 public partial class MainWindow
 {
+    private void ForgetFurnitureHabits(object sender,RoutedEventArgs e)
+    {Pet.ForgetHabits();SavePetState();RoomStatus.Text="已忘記家具習慣；名字、關係、回憶和房間佈置皆保留。";}
     private void InitializeRoom()
     {
         FurnitureOptions.ItemsSource=Enum.GetValues<FurnitureKind>();FurnitureOptions.SelectedIndex=0;
@@ -28,6 +30,7 @@ public partial class MainWindow
         Show();
         Pet.Ball.SmokeDirectionalHit();
         Pet.SmokeFurnitureInteractions(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!,"cat-platform-check.png"));
+        Pet.SmokeHome(System.IO.Path.GetDirectoryName(path)!);
         var visual=new System.Windows.Media.DrawingVisual();
         using(var dc=visual.RenderOpen())
         {

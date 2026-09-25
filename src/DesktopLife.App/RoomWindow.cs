@@ -10,6 +10,7 @@ namespace DesktopLife.App;
 public sealed class RoomWindow : Window
 {
     public RoomItem Item {get;private set;}
+    public FurnitureContext Context=>new(Item,FurnitureAffordance.For(Item.Kind),Platforms,!editing);
     private readonly Canvas canvas=new(){Background=Brushes.Transparent};
     private readonly SurfaceDrag drag;
     public event Action<RoomWindow>? Removed;
@@ -30,7 +31,7 @@ public sealed class RoomWindow : Window
         var menu=new ContextMenu();var remove=new MenuItem{Header="收起這件家具"};remove.Click+=(_,_)=>Removed?.Invoke(this);menu.Items.Add(remove);canvas.ContextMenu=menu;
     }
     public static (double Width,double Height) Size(FurnitureKind kind)=>kind switch
-    {FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),_=>(140,45)};
+    {FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),_=>(140,45)};
     public void SetEditing(bool value)
     {
         editing=value;canvas.IsHitTestVisible=value;Opacity=value?.8:1;
@@ -42,8 +43,17 @@ public sealed class RoomWindow : Window
         Item=Item with{X=x,Y=y};DisplayWorkspace.Position(this,x,y);
     }
     public void Relocate(double x,double y)=>Place(x,y);
-    public IReadOnlyList<RoomPlatform> Platforms=>Item.Kind switch
+    private (RoomItem Item,double X,double Y)? platformKey;
+    private IReadOnlyList<RoomPlatform> cachedPlatforms=[];
+    public IReadOnlyList<RoomPlatform> Platforms
     {
+        get {var key=(Item,Left,Top);if(platformKey!=key){platformKey=key;cachedPlatforms=BuildPlatforms();}return cachedPlatforms;}
+    }
+    private IReadOnlyList<RoomPlatform> BuildPlatforms()=>Item.Kind switch
+    {
+        FurnitureKind.PetBed=>[new(Left+15,140,Top+28,Top+28)],
+        FurnitureKind.Scratcher=>[new(Left+10,140,Top+16,Top+16)],
+        FurnitureKind.Box=>[new(Left+18,124,Top+94,Top+94)],
         FurnitureKind.CatTree=>[new(Left+18,125,Top+15,Top+15),new(Left+65,110,Top+112,Top+112)],
         FurnitureKind.Slide=>[new(Left+12,65,Top+20,Top+20),new(Left+77,170,Top+20,Top+174)],
         FurnitureKind.Desk=>[new(Left+5,220,Top+22,Top+22)],
@@ -67,6 +77,18 @@ public sealed class RoomWindow : Window
         {canvas.Children.Add(new Path{Data=Geometry.Parse(data),Stroke=B(color),StrokeThickness=thickness,StrokeStartLineCap=PenLineCap.Round,StrokeEndLineCap=PenLineCap.Round});}
         switch(Item.Kind)
         {
+            case FurnitureKind.PetBed:
+                Box(3,10,164,43,"#8EA896",22);Box(15,18,140,28,"#ECE1C5",20);
+                Line("M 34,30 Q 85,49 136,30","#CBBDA0",2);Box(4,39,162,13,"#A7BCAC",8);break;
+            case FurnitureKind.Scratcher:
+                Box(4,18,152,16,"#9B7759",6);Box(10,16,140,12,"#D4BA91",3);
+                for(var x=16;x<146;x+=6)Line($"M {x},18 L {x-3},26","#AF926B",1);
+                break;
+            case FurnitureKind.Box:
+                Box(10,27,140,69,"#AD8057",3);Box(18,31,124,57,"#65503E",2);
+                Line("M 10,30 L 2,12 L 72,20 M 150,30 L 157,12 L 86,20","#CBA77F",10);
+                Box(10,60,140,38,"#D5AE7F",3);Line("M 81,62 L 81,96","#B48B62",3);
+                Line("M 32,77 L 45,77 M 118,82 L 130,82","#AA805D",2);break;
             case FurnitureKind.CatTree:
                 Box(13,215,154,15,"#9B7759");Box(82,23,20,195,"#D4BA91");
                 for(var y=30;y<210;y+=9)Line($"M 83,{y} L 101,{y+4}","#AA8D68",2);

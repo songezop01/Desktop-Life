@@ -99,7 +99,7 @@ public partial class PetWindow : Window, IAnimationController
     {
         return DisplayWorkspace.Bounds;
     }
-    public void ResetPosition() { sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
+    public void ResetPosition() { homeTarget=null;feline.Clip=null;sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
     public void SetAction(BodyAction action)
     {
         if(Interacting)return;
@@ -138,6 +138,7 @@ public partial class PetWindow : Window, IAnimationController
         var dt = Math.Min(now - previous, 0.1);
         previous = now;
         if(!IsVisible)return;
+        RecordStressFrame();
         var interval=sequence?.Phase==BehaviorPhase.Sleep&&AllToys.All(t=>t.Model.IsResting)&&Furniture.All(f=>f.Teaser is null||f.Teaser.IsResting)?100:33;
         if(timer.Interval.TotalMilliseconds!=interval)timer.Interval=TimeSpan.FromMilliseconds(interval);
         if(queuedAction is {} queued&&!FinishingMotion&&!SequenceCommitted&&!Interacting){queuedAction=null;SetAction(queued);}
@@ -145,6 +146,11 @@ public partial class PetWindow : Window, IAnimationController
         var platforms=RoomPlatforms();var toys=AllToys.ToArray();
         foreach(var toy in toys){toy.Platforms=platforms;toy.Step(dt);}
         for(var i=0;i<toys.Length;i++)for(var j=i+1;j<toys.Length;j++)InteractiveToy.Collide(toys[i].Model,toys[j].Model);
+        if(EditingRoom)
+        {
+            StepPetGravity(dt);sequence?.Step(dt,new(Grounded:petGravity.Grounded));
+            if(sequence?.Finished==true)EndSequence();poseAction=BodyAction.ObserveCursor;ApplyPosition();ApplyPose();return;
+        }
         if(paused){StepPetGravity(dt);ApplyPosition();ApplyPose();return;}
         if(Interacting)
         {
@@ -291,6 +297,7 @@ public partial class PetWindow : Window, IAnimationController
             bodyTilt.Angle=0;bodyScale.ScaleX=bodyScale.ScaleY=1;poseOffset.Y=0;
             feline.Personality=BehaviorPersonality;
             feline.Pose(poseAction??body.Action,t,facing,attentionPoint is {} focus?Math.Clamp((focus.X-body.X-58)/100,-1.5,1.5):cursor is {} look?Math.Clamp((look.X-body.X-58)/150,-1.5,1.5):0,teaserPawTarget,sampleTime??sequencePoseAge??clock.Elapsed.TotalSeconds-actionStarted,sequence?.Phase is BehaviorPhase.Prepare or BehaviorPhase.Crouch?NavigationPhase.Crouching:MovementPhase,sequence?.Phase);
+            UpdateHomeExpression();
             ToyPaw.Visibility=Visibility.Collapsed;
             Canvas.SetLeft(PettingHand,40);Canvas.SetTop(PettingHand,48+Math.Sin(t*4)*2);
         }

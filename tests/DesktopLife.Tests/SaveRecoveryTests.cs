@@ -9,15 +9,15 @@ public sealed class SaveRecoveryTests:IDisposable
     {
         var store=new OrganismStore(root);store.Save(Valid());store.Save(Valid());
         File.WriteAllText(store.PathName,"{broken");
-        Assert.Equal(2,store.Load().SchemaVersion);Assert.NotNull(store.RecoveryMessage);
+        Assert.Equal(3,store.Load().SchemaVersion);Assert.NotNull(store.RecoveryMessage);
         Assert.Equal("{broken",File.ReadAllText(Directory.GetFiles(root,"*.damaged-*").Single()));
-        Assert.Equal(2,store.Load().SchemaVersion);
+        Assert.Equal(3,store.Load().SchemaVersion);
     }
     [Fact]public void BrokenRecentBackupFallsBackToOlderBackup()
     {
         var store=new OrganismStore(root);for(var i=0;i<4;i++)store.Save(Valid());
         File.WriteAllText(store.PathName,"bad");File.WriteAllText(store.PathName+".bak","bad");
-        Assert.Equal(2,store.Load().SchemaVersion);Assert.Contains(".bak.1",store.RecoveryMessage);
+        Assert.Equal(3,store.Load().SchemaVersion);Assert.Contains(".bak.1",store.RecoveryMessage);
     }
     [Fact]public void FutureVersionCannotBeOverwrittenByRecovery()
     {
@@ -30,10 +30,10 @@ public sealed class SaveRecoveryTests:IDisposable
     {
         var store=new OrganismStore(root);for(var i=0;i<4;i++)store.Save(Valid());
         File.WriteAllText(store.PathName,"{\"SchemaVersion\":\"invalid\"}");
-        Assert.Equal(2,store.Load().SchemaVersion);
+        Assert.Equal(3,store.Load().SchemaVersion);
         File.Delete(store.PathName);File.Delete(store.PathName+".bak");
         Assert.True(store.Exists);
-        Assert.Equal(2,store.LoadOrMigrate(new(),DateTimeOffset.UtcNow).SchemaVersion);
+        Assert.Equal(3,store.LoadOrMigrate(new(),DateTimeOffset.UtcNow).SchemaVersion);
     }
     [Fact]public void ImportValidationAndRoundTripDoNotTouchIconBackup()
     {

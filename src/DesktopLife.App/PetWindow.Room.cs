@@ -35,7 +35,7 @@ public partial class PetWindow
         Art.Update(to,[],body.Action,clock.Elapsed.TotalSeconds,body.X,body.Y);ApplyPosition();
     }
     public void SetRoomEditing(bool editing)
-    {EditingRoom=editing;foreach(var f in Furniture)f.SetEditing(editing);}
+    {EditingRoom=editing;if(editing){sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute();queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
     public void AddRoomItem(RoomItem item)
     {
         if(Furniture.Count+ExtraToys.Count>=24)return;
@@ -49,7 +49,7 @@ public partial class PetWindow
         else
         {
             var window=new RoomWindow(item);window.SetEditing(EditingRoom);window.Changed+=()=>RoomChanged?.Invoke();
-            window.Removed+=f=>{if(teaserTarget==f){teaserTarget=null;teaserPawTarget=null;}Furniture.Remove(f);f.Close();RoomChanged?.Invoke();};Furniture.Add(window);
+            window.Removed+=f=>{if(teaserTarget==f){teaserTarget=null;teaserPawTarget=null;}Furniture.Remove(f);restPreference.Prune(Furniture.Select(w=>w.Item.Id));f.Close();RoomChanged?.Invoke();};Furniture.Add(window);
         }
     }
     public async Task SmokeGravity()
@@ -60,7 +60,15 @@ public partial class PetWindow
         if(body.Y<start+50)throw new Exception("Pet window did not fall under gravity.");
         ResetPosition();
     }
-    private IReadOnlyList<RoomPlatform> RoomPlatforms()=>Furniture.SelectMany(f=>f.Platforms).ToArray();
+    private int platformCacheKey;
+    private IReadOnlyList<RoomPlatform> platformCache=[];
+    public int PlatformRebuilds {get;private set;}
+    private IReadOnlyList<RoomPlatform> RoomPlatforms()
+    {
+        var hash=new HashCode();foreach(var f in Furniture){hash.Add(f.Item);hash.Add(f.Left);hash.Add(f.Top);}var key=hash.ToHashCode();
+        if(key!=platformCacheKey){platformCacheKey=key;platformCache=Furniture.SelectMany(f=>f.Platforms).ToArray();PlatformRebuilds++;}
+        return platformCache;
+    }
     private bool PlayTeaser(double dt, double now, double speed)
     {
         if(teaserTarget?.Teaser is not {} pendulum)return false;

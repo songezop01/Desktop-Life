@@ -2,6 +2,8 @@ using DesktopLife.Core;
 namespace DesktopLife.App;
 public partial class PetWindow
 {
+    public int PathPlans {get;private set;}
+    public int NavigationFailures {get;private set;}
     public NavigationPhase MovementPhase {get;private set;}
     private readonly Queue<RoomWaypoint> route=[];
     private double navigationElapsed,landingUntil;
@@ -16,7 +18,7 @@ public partial class PetWindow
     {route.Clear();routeGoal=null;navigationElapsed=0;navigationProgress.Reset();MovementPhase=NavigationPhase.Idle;}
     private void RecoverNavigation()
     {
-        route.Clear();routeGoal=null;navigationElapsed=0;navigationProgress.Reset();
+        NavigationFailures++;route.Clear();routeGoal=null;navigationElapsed=0;navigationProgress.Reset();
         recoveryX=RoomNavigation.EscapeX(RoomPlatforms(),Bounds(),body.X+58,body.Y+144)-58;
         recoveryAge=0;MovementPhase=NavigationPhase.Recovering;sequence?.Interrupt(BehaviorInterruptReason.Safety);
     }
@@ -34,6 +36,7 @@ public partial class PetWindow
     private void Navigate(double x,double y,double dt,BodyBounds bounds,double speed)
     {
         navigationStepped=true;
+        if(EditingRoom){poseAction=BodyAction.ObserveCursor;return;}
         if(StepNavigationRecovery(dt))return;
         var platforms=RoomPlatforms();var hash=new HashCode();foreach(var p in platforms)hash.Add(p);var geometry=hash.ToHashCode();
         x=Math.Clamp(x,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-116));
@@ -69,9 +72,9 @@ public partial class PetWindow
         if(routeGoal is not {} goal||Math.Abs(goal.X-x)>35||Math.Abs(goal.Y-y)>12)
         {
             route.Clear();routeGoal=(x,y);
-            var planned=RoomNavigation.Plan(platforms,bounds,body.X+58,body.Y+144,x+58,y+144);
+            PathPlans++;var planned=RoomNavigation.Plan(platforms,bounds,body.X+58,body.Y+144,x+58,y+144);
             if(planned is null)
-            {MovementPhase=NavigationPhase.Unreachable;poseAction=BodyAction.ObserveCursor;return;}
+            {NavigationFailures++;MovementPhase=NavigationPhase.Unreachable;poseAction=BodyAction.ObserveCursor;return;}
             foreach(var waypoint in planned)route.Enqueue(waypoint);
             MovementPhase=NavigationPhase.Approaching;navigationElapsed=0;
         }
