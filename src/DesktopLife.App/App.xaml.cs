@@ -14,8 +14,9 @@ public partial class App : Application
         if(e.Args.Contains("--icons-read-test")||e.Args.Contains("--icons-restore-test"))
         {Shutdown(IconIntegrationCheck.Run(e.Args.Contains("--icons-restore-test")));return;}
         var smoke = e.Args.Contains("--smoke-test");
+        var stress=e.Args.Contains("--stress-test");
         var performance=e.Args.Contains("--performance-test");
-        var root = smoke||performance ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
+        var root = smoke||performance||stress ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopLife");
         if(e.Args.Contains("--shutdown"))
         {
@@ -29,7 +30,7 @@ public partial class App : Application
             Directory.CreateDirectory(root);
             // Prevent two instances from overwriting the same organism's state.
             try { instanceLock = new FileStream(Path.Combine(root,"instance.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None); }
-            catch(IOException) when(!smoke&&!performance)
+            catch(IOException) when(!smoke&&!performance&&!stress)
             {
                 if(AppInstanceChannel.SendAsync(root,AppInstanceChannel.Command.Activate).GetAwaiter().GetResult())
                 {Shutdown();return;}
@@ -56,13 +57,13 @@ public partial class App : Application
             window.ShowStorageNotice(snapshots.RecoveryMessage);
             MainWindow = window;
             window.Show();
-            if(!smoke&&!performance)
+            if(!smoke&&!performance&&!stress)
                 instanceChannel=new AppInstanceChannel(root,command=>Dispatcher.BeginInvoke(new Action(()=>
                 {
                     if(command==AppInstanceChannel.Command.Shutdown)window.RequestExit();
                     else {window.Show();window.WindowState=WindowState.Normal;window.Activate();}
                 })));
-            if(smoke||performance)window.BeginDiagnostic();
+            if(smoke||performance||stress)window.BeginDiagnostic();
             if(performance)
             {
                 var minimize=new DispatcherTimer{Interval=TimeSpan.FromSeconds(3)};
@@ -71,6 +72,12 @@ public partial class App : Application
                 finish.Tick+=(_,_)=>{finish.Stop();window.RequestExit();};finish.Start();
             }
             SessionEnding += (_, args) => { window.PrepareExit(); if (!window.SavePetState()) args.Cancel = true; };
+            if(stress)
+            {
+                var argument=e.Args.FirstOrDefault(a=>a.StartsWith("--stress-seconds=",StringComparison.Ordinal));
+                var duration=argument is not null&&int.TryParse(argument.Split('=')[1],out var parsed)?Math.Clamp(parsed,60,900):600;
+                Dispatcher.BeginInvoke(new Action(async()=>{try{await window.RunHomeStress(root,duration);log.Write("Stress PASS");}catch(Exception ex){log.Write("Stress FAIL: "+ex);Shutdown(2);}}));
+            }
             if (smoke)
             {
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };

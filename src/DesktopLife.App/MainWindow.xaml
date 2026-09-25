@@ -4,7 +4,7 @@
  <Style TargetType="ComboBox"><Setter Property="Padding" Value="8,6"/><Setter Property="Margin" Value="0,4,0,10"/></Style>
 <local:UiText x:Key="UiText"/><DataTemplate x:Key="EnumLabel"><TextBlock Text="{Binding Converter={StaticResource UiText}}"/></DataTemplate></Window.Resources>
  <Grid Margin="32"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <StackPanel><TextBlock Text="DESKTOP LIFE  /  陪伴房間 0.6" Foreground="#5D826B" FontSize="12"/><TextBlock x:Name="CompanionTitle" Text="一隻小寵物，一起過日子。" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/><TextBlock Text="牠會餓、會睏，也會慢慢記得你的溫柔。" Foreground="#747B73"/></StackPanel>
+  <StackPanel><TextBlock Text="DESKTOP LIFE  /  陪伴房間 0.7" Foreground="#5D826B" FontSize="12"/><TextBlock x:Name="CompanionTitle" Text="一隻小寵物，一起過日子。" FontSize="28" FontWeight="SemiBold" Margin="0,10,0,8"/><TextBlock Text="牠會餓、會睏，也會慢慢記得你的溫柔。" Foreground="#747B73"/></StackPanel>
   <Border Grid.Row="1" Margin="0,20" Padding="20" CornerRadius="12" Background="#FFFDFA"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
    <TextBlock Text="今天，想怎麼陪牠？" FontSize="20" FontWeight="SemiBold"/>
    <TextBlock x:Name="BondStatus" Margin="0,8,0,14" Foreground="#62846D"/>
@@ -49,7 +49,7 @@
    <TextBlock x:Name="FeedingStatus" Margin="0,8,0,12" TextWrapping="Wrap" Foreground="#717970"/>
    <ItemsControl x:Name="HomeostasisRows"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="175"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Value}" Height="7" VerticalAlignment="Center" Foreground="#426B54" Background="#E7E9E0" BorderThickness="0"/><TextBlock Grid.Column="2" Text="{Binding Value, StringFormat={}{0:F2}}" HorizontalAlignment="Right" Foreground="#426B54"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
    <TextBlock Text="所有值 0–100；飢餓、無聊、孤單、疲勞越高代表需求越高。" Foreground="#717970" TextWrapping="Wrap" Margin="0,10,0,4"/>
-   <TextBlock Text="手動行為預覽"/><ComboBox x:Name="Actions" ItemTemplate="{StaticResource EnumLabel}" Width="110" SelectionChanged="SelectAction" Margin="0,0,6,4"/>
+   <Button Content="忘記家具習慣" Click="ForgetFurnitureHabits" HorizontalAlignment="Left"/><TextBlock Text="手動行為預覽"/><ComboBox x:Name="Actions" ItemTemplate="{StaticResource EnumLabel}" Width="110" SelectionChanged="SelectAction" Margin="0,0,6,4"/>
    </StackPanel></Expander>
    <TextBlock x:Name="SaveStatus" Text="生理狀態已載入；每 60 秒與正常關閉時保存。" Foreground="#717970" TextWrapping="Wrap"/>
    <Expander Header="存檔與備份" Margin="0,10"><StackPanel>

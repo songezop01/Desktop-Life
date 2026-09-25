@@ -89,6 +89,8 @@ public sealed class FelineVisual : FrameworkElement
         }
         if(movement is NavigationPhase.Crouching or NavigationPhase.Landing)
             target=new(49,123,15,82,107,4);
+        if(behaviorPhase==BehaviorPhase.Knead)target=new(49,115,19,81,105,5);
+        if(behaviorPhase==BehaviorPhase.Scratch)target=new(45,109,20,83,116,8);
         if(behaviorPhase==BehaviorPhase.GroomBody)target=target with{HeadX=51,HeadY=109,HeadAngle=-22};
         target=target with{BodyX=target.BodyX+microPose.Weight,HeadAngle=target.HeadAngle+microPose.Head};
         target=target with{HeadX=Lerp(target.HeadX,58,backBlend*.5)};
@@ -235,6 +237,13 @@ public sealed class FelineVisual : FrameworkElement
         {
             if(actionAge%6 is >=.65 and <=2.9){footX = front ? (far ? 87 : 99) : (far ? 22 : 32);if(front)rootY+=8;}
             else if(actionAge%6 is >2.9 and <4.3&&!front&&!far){footX=13;footY=134;}
+        }
+        if(behaviorPhase==BehaviorPhase.Knead&&front)footY-=Math.Max(0,Math.Sin(time*7+(far?Math.PI:0)))*4;
+        if(behaviorPhase==BehaviorPhase.Scratch)
+        {
+            footX=front?(far?84:98)+Math.Sin(time*9+(far?Math.PI:0))*4:(far?22:32);
+            footY=SupportBaseline-3.5;
+            if(front&&!far)RenderedPawTip=new(direction<0?116-footX:footX,footY+3.5);
         }
         if (action == BodyAction.Fall) { footX += front ? 5 : -3; footY = 124 + (far ? -4 : 0); }
         if (!far && front && IsPlaying)

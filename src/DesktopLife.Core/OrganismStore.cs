@@ -3,14 +3,14 @@ using System.Text.Json.Serialization;
 namespace DesktopLife.Core;
 public sealed record OrganismSnapshot
 {
-    [JsonRequired] public int SchemaVersion { get; init; } = 2;
+    [JsonRequired] public int SchemaVersion { get; init; } = 3;
     [JsonRequired] public PetSnapshot Pet { get; init; } = new();
     [JsonRequired] public LearningState Learning { get; init; } = new();
     [JsonRequired] public PersonalityProfile Personality { get; init; } = new();
     [JsonRequired] public AppSettings Settings { get; init; } = new();
     public void Validate()
     {
-        if(SchemaVersion!=2||Pet is null||Learning is null||Personality is null||Settings is null)throw new InvalidDataException("Unknown organism schema or missing data.");
+        if(SchemaVersion!=3||Pet is null||Learning is null||Personality is null||Settings is null)throw new InvalidDataException("Unknown organism schema or missing data.");
         Pet.Validate();Learning.Validate();Personality.Validate();Settings.Validate();
     }
 }
@@ -25,10 +25,11 @@ public sealed class OrganismStore(string directory)
         using(var document=JsonDocument.Parse(json))
         {
             if(document.RootElement.ValueKind!=JsonValueKind.Object)throw new InvalidDataException("存檔格式無效。");
-            if(document.RootElement.TryGetProperty("SchemaVersion",out var version)&&version.ValueKind==JsonValueKind.Number&&version.TryGetInt32(out var number)&&number>2)
+            if(document.RootElement.TryGetProperty("SchemaVersion",out var version)&&version.ValueKind==JsonValueKind.Number&&version.TryGetInt32(out var number)&&number>3)
                 throw new NotSupportedException("存檔來自較新的程式版本，請更新程式；原檔未被修改。");
         }
         var value=JsonSerializer.Deserialize<OrganismSnapshot>(json)??throw new InvalidDataException("存檔內容為空。");
+        if(value.SchemaVersion==2)value=value with{SchemaVersion=3};
         value.Validate();return value;
     }
     private static bool Damaged(Exception ex)=>ex is JsonException or InvalidDataException or ArgumentException;

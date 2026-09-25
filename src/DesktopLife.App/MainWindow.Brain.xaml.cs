@@ -4,7 +4,7 @@ public partial class MainWindow
 {
     public void BeginDiagnostic(){Priorities.SelectedItem=DisplayPriority.Highest;SetManualAction(BodyAction.Idle);}
     private PersonalityProfile personality = new();
-    private readonly ActionSelection selector = new(Random.Shared.Next());
+    private ActionSelection selector = new(Random.Shared.Next());
     private readonly UtilityBrain utilityBrain = new();
     private double lastDebugUpdate=-1;
     private PetAction? runningAction;
@@ -13,11 +13,14 @@ public partial class MainWindow
     private BrainOutput currentOutput = new(new Dictionary<BehaviorDrive,double>(),[],[]);
     private void TickBrain(double elapsed)
     {
-        if(Pet.Interacting)return;
+        Pet.Routine.Advance(elapsed,Pet.PhysiologicalAction);
+        if(Pet.Interacting||Pet.EditingRoom)return;
         if((Life.State.Energy<=10||Life.State.Fatigue>=95)&&Pet.CurrentAction!=BodyAction.Sleep)
         {Pet.RequestAction(BodyAction.Sleep,BehaviorInterruptReason.CriticalNeed);return;}
         if(lifeClock.Elapsed.TotalSeconds<careUntil)return;
         if(Pet.SequenceCommitted)return;
+        if(automaticActions&&!Pet.FinishingMotion&&Pet.Routine.Opportunity(Life.State,personality,Pet.AvailableHomeUses,QuietMode.IsChecked==true,Pet.EditingRoom) is {} homeAction)
+        {runningAction?.Stop();runningAction=new(homeAction);runningAction.Start(Pet);return;}
         var environment=LatestEnvironment is {} fresh && DateTimeOffset.UtcNow-fresh.Timestamp<=TimeSpan.FromSeconds(3)?fresh:null;
         var context=new EnvironmentContext(Life.State,personality,environment,ActionCatalog.Context(environment,DateTimeOffset.UtcNow),Affordances:Pet.SenseAffordances());
         currentOutput=utilityBrain.Evaluate(context);
@@ -31,6 +34,7 @@ public partial class MainWindow
         if(automaticActions && (runningAction is null || runningAction.ElapsedSeconds>=minimum || decision.Reason.StartsWith("生理安全")))
         {
             var action=decision.Action??BodyAction.Idle;
+            if(action==BodyAction.PlayToy&&Pet.Routine.PlayCooling)action=BodyAction.ObserveCursor;
             if(QuietMode.IsChecked==true && action is not (BodyAction.Sleep or BodyAction.Sit or BodyAction.Groom or BodyAction.Stretch))action=BodyAction.Sit;
             runningAction?.Stop();runningAction=new(action);runningAction.Start(Pet);
         }

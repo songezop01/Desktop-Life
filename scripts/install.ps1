@@ -8,7 +8,7 @@ if(!$ReleaseDirectory){
 $manifest=Get-Content -LiteralPath (Join-Path $ReleaseDirectory 'release.json') -Raw | ConvertFrom-Json
 $source=Join-Path $ReleaseDirectory 'DesktopLife.exe'
 if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $manifest.Sha256){throw 'Release checksum mismatch.'}
-if($manifest.Build -notmatch '^0\.6\.0-\d{8}-\d{6}$'){throw 'Invalid build identifier.'}
+if($manifest.Build -notmatch '^0\.7\.0-\d{8}-\d{6}$'){throw 'Invalid build identifier.'}
 $installRoot=Join-Path $env:LOCALAPPDATA 'Programs/DesktopLife'
 $target=Join-Path $installRoot $manifest.Build
 $exe=Join-Path $target 'DesktopLife.exe'
