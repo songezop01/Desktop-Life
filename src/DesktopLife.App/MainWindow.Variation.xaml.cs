@@ -1,10 +1,10 @@
-using DesktopLife.Core;
+﻿using DesktopLife.Core;
 namespace DesktopLife.App;
 public partial class MainWindow
 {
     private BehaviorParameters CreateParameters(BodyAction action)
     {
-        var context=new EnvironmentContext(Life.State,personality,LatestEnvironment,ActionCatalog.Context(LatestEnvironment,DateTimeOffset.UtcNow));
+        var context=new EnvironmentContext(Life.State,effectivePersonality,LatestEnvironment,ActionCatalog.Context(LatestEnvironment,DateTimeOffset.UtcNow));
         var output=currentOutput.Scores.Count>0?currentOutput:utilityBrain.Evaluate(context);
         var memory=Learning.State.Variation;var now=DateTimeOffset.UtcNow;
         BehaviorParameters? chosen=null;var best=-1d;
@@ -18,6 +18,7 @@ public partial class MainWindow
     }
     private void ShowVariation()
     {
+        if(!IsVisible||!StyleStatus.IsVisible)return;
         var p=Pet.Parameters;var d=p.Drives;
         StyleStatus.Text=$"創意 {d.Creativity:F2} · 新奇 {d.Novelty:F2} · 對稱 {d.Symmetry:F2} · 複雜 {d.Complexity:F2}\n社交 {d.Social:F2} · 調皮 {d.Mischief:F2} · 愛玩 {d.Playfulness:F2} · 平靜 {d.Calmness:F2}\n"
             +$"繪畫：{p.Draw.StrokeCount} 組元素 · 複雜 {p.Draw.Complexity:F2} · 對稱 {p.Draw.Symmetry:F2} · {UiText.Label(p.Draw.Primary)} · 大小 {p.Draw.Size:F2}\n"
@@ -29,6 +30,7 @@ public partial class MainWindow
     }
     public void SmokeGenerative(string path)
     {
+        ArtWindow.VerifyVectorRendering(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!,"vector-render-check.png"));
         var generated=CreateParameters(BodyAction.DrawDoodle);
         Pet.Art.Create(BodyAction.DrawDoodle,generated,Learning.State.Variation,20,20);
         Pet.Art.Create(BodyAction.WriteNote,CreateParameters(BodyAction.WriteNote),Learning.State.Variation,320,20);

@@ -1,0 +1,254 @@
+name: Windows downloadable release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-life-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.repository.private == false && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+
+    steps:
+      - name: Check out this source commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install the SDK from global.json
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Read the application version
+        id: version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$project = Get-Content -LiteralPath 'src/DesktopLife.App/DesktopLife.App.csproj' -Raw
+          $versions = @($project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -Unique)
+          if ($versions.Count -ne 1 -or $versions[0] -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'The application must declare one stable major.minor.patch Version.'
+          }
+          $commit = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $commit -ne $env:GITHUB_SHA) {
+            throw 'The checked-out commit differs from the workflow source commit.'
+          }
+          "version=$($versions[0])" >> $env:GITHUB_OUTPUT
+          "tag=v$($versions[0])" >> $env:GITHUB_OUTPUT
+
+      - name: Restore and build the solution
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore DesktopLife.slnx --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build DesktopLife.slnx -c Release --no-restore --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+      - name: Run all solution unit tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet test DesktopLife.slnx -c Release --no-build --no-restore --nologo --logger 'trx;LogFileName=unit-tests.trx' --results-directory 'artifacts/ci-tests'
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
+          $results = @(Get-ChildItem -LiteralPath 'artifacts/ci-tests' -Filter '*.trx' -File -Recurse)
+          if ($results.Count -eq 0) { throw 'The unit test run produced no result.' }
+          $passed = 0
+          $failed = 0
+          foreach ($file in $results) {
+            [xml]$result = Get-Content -LiteralPath $file.FullName -Raw
+            $passed += [int]$result.TestRun.ResultSummary.Counters.passed
+            $failed += [int]$result.TestRun.ResultSummary.Counters.failed
+            if ($result.TestRun.ResultSummary.outcome -ne 'Completed' -and $result.TestRun.ResultSummary.outcome -ne 'Passed') {
+              throw 'The unit test report does not show a completed successful run.'
+            }
+          }
+          if ($passed -lt 1 -or $failed -ne 0) { throw 'Expected passing unit tests and no failures.' }
+          "CI_UNIT_TESTS_PASSED=$passed" >> $env:GITHUB_ENV
+
+      - name: Preserve an existing version release or tag
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exists = $false
+          foreach ($endpoint in @("releases/tags/$env:RELEASE_TAG", "git/ref/tags/$env:RELEASE_TAG")) {
+            $response = & gh api "repos/$env:GITHUB_REPOSITORY/$endpoint" 2>&1
+            $code = $LASTEXITCODE
+            if ($code -eq 0) { $exists = $true; break }
+            if (($response | Out-String) -notmatch 'HTTP 404') {
+              throw 'Cannot safely determine whether this immutable release or tag already exists.'
+            }
+          }
+          "exists=$($exists.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($exists) {
+            "### $env:RELEASE_TAG already exists" >> $env:GITHUB_STEP_SUMMARY
+            'Build and unit tests passed. Existing tags, notes and assets were left unchanged.' >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Publish and package the standalone Windows download
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $publish = Join-Path $env:RUNNER_TEMP 'desktop-life-publish'
+          $assets = Join-Path $env:RUNNER_TEMP 'desktop-life-release-assets'
+          $package = Join-Path $env:RUNNER_TEMP 'desktop-life-package'
+          New-Item -ItemType Directory -Path $publish, $assets, $package | Out-Null
+          dotnet publish src/DesktopLife.App/DesktopLife.App.csproj -c Release -r win-x64 --self-contained true -o $publish --nologo -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone publish failed.' }
+          $exe = Join-Path $assets 'DesktopLife.exe'
+          Copy-Item -LiteralPath (Join-Path $publish 'DesktopLife.App.exe') -Destination $exe
+          Copy-Item -LiteralPath $exe -Destination $package
+          $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $sdk = (& dotnet --version).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the SDK version.' }
+          $metadata = [ordered]@{
+            Version = $env:RELEASE_VERSION
+            SourceCommit = $env:GITHUB_SHA
+            Repository = $env:GITHUB_REPOSITORY
+            WorkflowRunUrl = $runUrl
+            BuiltUtc = [DateTimeOffset]::UtcNow.ToString('o')
+            SdkVersion = $sdk
+            Architecture = 'win-x64'
+            SelfContained = $true
+            SingleFile = $true
+            Executable = 'DesktopLife.exe'
+            ExecutableSha256 = $exeHash
+            UnitTestsPassed = [int]$env:CI_UNIT_TESTS_PASSED
+            Verification = 'CI compilation and all solution unit tests passed. No application, native WPF checks, short stress or long soak ran in this workflow.'
+            BinaryIdentity = 'This CI binary is identified by its own SHA256 and source commit; its hash may differ from a locally installed build of the same version.'
+          }
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $assets 'BUILD-INFO.json') -Encoding utf8NoBOM
+          Copy-Item -LiteralPath (Join-Path $assets 'BUILD-INFO.json') -Destination $package
+          $readme = @(
+            "# Desktop Life $env:RELEASE_VERSION",
+            '',
+            '適用 Windows x64。解壓縮後雙擊 DesktopLife.exe；已內含 .NET 執行環境。',
+            '這是可攜下載包，不會自動安裝、更新捷徑或取代正在執行的版本。',
+            '',
+            '## 既有使用者',
+            '',
+            '升級前請先正常結束舊程式並備份全部資料；請依專案文件的升級及回復流程操作。',
+            '資料位於 %LOCALAPPDATA%\DesktopLife。不要把下載包解壓縮到此資料目錄。',
+            '0.11 存檔使用 schema 7；回復 0.10.1 必須還原升級前的 schema 6 備份，不能只更換 EXE。',
+            '已安裝並正常使用 0.11 的使用者，不需要為了這個 GitHub 下載包覆蓋現有安裝。',
+            '',
+            '## 版本與驗證',
+            '',
+            "來源 commit：$env:GITHUB_SHA",
+            "建置紀錄：$runUrl",
+            'BUILD-INFO.json 記錄此下載包的版本、來源與 EXE 校驗值；SHA256SUMS 同時記錄 EXE 與 ZIP 校驗值。',
+            '此流程完成編譯及核心單元測試，沒有執行桌面程式、原生桌面檢查或壓力測試。',
+            '本機已安裝版本與此 CI 下載包各有自己的校驗值；同版本不代表二進位檔案完全相同。',
+            '此版本尚未數位簽章。實體 S20 拔插、旋轉與硬體休眠仍是獨立驗證項目。',
+            '',
+            '更新內容及測試政策見 docs/UPDATE_011.md、docs/VERIFICATION_WORKFLOW.md。'
+          )
+          $readme | Set-Content -LiteralPath (Join-Path $package 'README.md') -Encoding utf8NoBOM
+          $docs = Join-Path $package 'docs'
+          New-Item -ItemType Directory -Path $docs | Out-Null
+          Copy-Item -LiteralPath 'docs/UPDATE_011.md', 'docs/VERIFICATION_WORKFLOW.md', 'AGENTS.md' -Destination $docs
+          $zipName = "DesktopLife-$env:RELEASE_VERSION-win-x64.zip"
+          $zip = Join-Path $assets $zipName
+          Compress-Archive -Path (Join-Path $package '*') -DestinationPath $zip -CompressionLevel Optimal
+          $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          @("$exeHash  DesktopLife.exe", "$zipHash  $zipName") | Set-Content -LiteralPath (Join-Path $assets 'SHA256SUMS') -Encoding utf8NoBOM
+          $notes = @(
+            "# Desktop Life $env:RELEASE_VERSION — Windows x64",
+            '',
+            "下載 DesktopLife-$env:RELEASE_VERSION-win-x64.zip，解壓縮後執行 DesktopLife.exe，無需另裝 .NET。",
+            '包含一至三層陪伴小屋、角色比例與行走動畫改善，以及插畫家具。詳細變更與目前限制見 ZIP 內的更新文件。',
+            '',
+            '既有使用者請先正常退出、備份資料並保留回復入口。此下載包不會自動取代現有安裝；0.11 回復 0.10.1 需要升級前的 schema 6 備份。',
+            '',
+            '## 來源與校驗',
+            '',
+            "來源 commit：[$env:GITHUB_SHA]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$env:GITHUB_SHA)",
+            "建置紀錄：[$env:GITHUB_RUN_ID]($runUrl)",
+            '資產提供 EXE、ZIP、SHA256SUMS 及 BUILD-INFO.json；校驗值屬於這次 CI 建置，可能與同版本的本機安裝不同。',
+            '',
+            '## 本次 CI 驗證範圍',
+            '',
+            "Release 編譯及全部單元測試通過（$env:CI_UNIT_TESTS_PASSED 項）。",
+            '此流程未執行 App、原生 WPF 檢查、600 秒短測或長測，不宣稱此 CI 二進位檔案取得 Standard 或 Full PASS。',
+            '依 2026-10-08 政策，同一 minor 系列修正採 Standard；跨 minor 更新才考慮 Full。已完成的 0.11 Full 證據不會由此流程重跑。',
+            '程式尚未數位簽章。實體 spacedesk S20 拔插、旋轉與硬體休眠仍未驗證。'
+          )
+          $notes | Set-Content -LiteralPath (Join-Path $assets 'release-notes.md') -Encoding utf8NoBOM
+
+      - name: Create a new immutable-by-policy version release
+        id: publish
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          foreach ($endpoint in @("releases/tags/$env:RELEASE_TAG", "git/ref/tags/$env:RELEASE_TAG")) {
+            $response = & gh api "repos/$env:GITHUB_REPOSITORY/$endpoint" 2>&1
+            $code = $LASTEXITCODE
+            if ($code -eq 0) {
+              'The release or tag appeared during packaging; preserving it without changes.' >> $env:GITHUB_STEP_SUMMARY
+              'published=false' >> $env:GITHUB_OUTPUT
+              exit 0
+            }
+            if (($response | Out-String) -notmatch 'HTTP 404') {
+              throw 'Cannot safely recheck the immutable release or tag.'
+            }
+          }
+          $assets = Join-Path $env:RUNNER_TEMP 'desktop-life-release-assets'
+          $files = @('DesktopLife.exe', "DesktopLife-$env:RELEASE_VERSION-win-x64.zip", 'SHA256SUMS', 'BUILD-INFO.json') | ForEach-Object { Join-Path $assets $_ }
+          gh release create $env:RELEASE_TAG @files --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --latest --title "Desktop Life $env:RELEASE_VERSION" --notes-file (Join-Path $assets 'release-notes.md')
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing releases are never overwritten.' }
+          'published=true' >> $env:GITHUB_OUTPUT
+
+      - name: Download the published assets and verify SHA256
+        if: steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $download = Join-Path $env:RUNNER_TEMP 'desktop-life-download-verification'
+          New-Item -ItemType Directory -Path $download | Out-Null
+          $zipName = "DesktopLife-$env:RELEASE_VERSION-win-x64.zip"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $download --pattern 'DesktopLife.exe' --pattern $zipName --pattern 'SHA256SUMS' --pattern 'BUILD-INFO.json'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download all newly published release assets.' }
+          $assets = Join-Path $env:RUNNER_TEMP 'desktop-life-release-assets'
+          foreach ($name in @('DesktopLife.exe', $zipName, 'SHA256SUMS', 'BUILD-INFO.json')) {
+            $expected = (Get-FileHash -LiteralPath (Join-Path $assets $name) -Algorithm SHA256).Hash
+            $actual = (Get-FileHash -LiteralPath (Join-Path $download $name) -Algorithm SHA256).Hash
+            if ($actual -ne $expected) { throw "Downloaded asset checksum mismatch: $name" }
+          }
+          $metadata = Get-Content -LiteralPath (Join-Path $download 'BUILD-INFO.json') -Raw | ConvertFrom-Json
+          if ($metadata.SourceCommit -ne $env:GITHUB_SHA -or $metadata.Version -ne $env:RELEASE_VERSION) {
+            throw 'Downloaded build metadata identifies another source commit or version.'
+          }
+          "### Desktop Life $env:RELEASE_VERSION published" >> $env:GITHUB_STEP_SUMMARY
+          "[Download release]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$env:RELEASE_TAG)" >> $env:GITHUB_STEP_SUMMARY
+          'EXE, ZIP, checksums and build metadata were downloaded afresh and matched the files built in this run.' >> $env:GITHUB_STEP_SUMMARY
+          'This workflow ran compilation and unit tests only; no Standard or Full verification was run.' >> $env:GITHUB_STEP_SUMMARY

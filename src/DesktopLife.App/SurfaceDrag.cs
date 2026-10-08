@@ -33,8 +33,9 @@ public sealed class SurfaceDrag
         {
             if(e.ChangedButton!=MouseButton.Left)return;
             Diagnostic="down";
-            PressPoint=diagnosticPointer is {} local?new Point(local.X-window.Left,local.Y-window.Top):e.GetPosition(window);
-            var p=Pointer(e);gesture.Begin(p.X,p.Y,window.Left,window.Top);
+            var origin=DisplayWorkspace.RoomPosition(window);
+            PressPoint=diagnosticPointer is {} local?new Point(local.X-origin.X,local.Y-origin.Y):e.GetPosition(window);
+            var p=Pointer(e);gesture.Begin(p.X,p.Y,origin.X,origin.Y);
             previous=p;previousTime=time.Elapsed.TotalSeconds;VelocityX=VelocityY=0;
             if(!surface.CaptureMouse()){Diagnostic="capture failed";gesture.End();return;}
             Diagnostic="captured";

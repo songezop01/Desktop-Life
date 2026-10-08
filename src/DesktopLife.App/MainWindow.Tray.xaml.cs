@@ -12,20 +12,20 @@ public partial class MainWindow
     private void InitializeTray()
     {
         var menu=new Forms.ContextMenuStrip();
-        void Add(string title,Action action)=>menu.Items.Add(title,null,(_,_)=>Dispatcher.Invoke(action));
+        void Add(string title,Action action)=>menu.Items.Add(title,null,(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(action)));
         Add("顯示角色",()=>{userHidden=false;UpdatePetVisibility();});
         Add("隱藏角色",()=>{userHidden=true;UpdatePetVisibility();});
         Add("暫停",()=>SetPaused(true));Add("繼續",()=>SetPaused(false));
         Add("控制台",()=>{Show();WindowState=WindowState.Normal;Activate();});
-        Add("清除作品",()=>{Pet.Art.ClearWorks();SavePetState();});
-        Add("重設位置",()=>Pet.ResetPosition());
+        Add("清除作品",()=>{Pet.Art.ClearWorks();QueuePetSave();});
+        Add("重設位置",()=>CharacterWindow(careTarget).ResetPosition());
         Add("恢復桌面圖示排列",()=>RestoreDesktopIcons(this,new RoutedEventArgs()));
-        Add("餵飯",()=>Care(CareKind.Feed));Add("摸摸",()=>Care(CareKind.Pet));Add("陪玩",()=>Care(CareKind.Play));
+        Add("餵飯",()=>CareSelected(CareKind.Feed));Add("摸摸",()=>CareSelected(CareKind.Pet));Add("陪玩",()=>CareSelected(CareKind.Play));
         var layers=new Forms.ToolStripMenuItem("顯示層級");
-        foreach(var priority in Enum.GetValues<DisplayPriority>())layers.DropDownItems.Add(UiText.Label(priority),null,(_,_)=>Dispatcher.Invoke(()=>Priorities.SelectedItem=priority));
+        foreach(var priority in Enum.GetValues<DisplayPriority>())layers.DropDownItems.Add(UiText.Label(priority),null,(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(()=>Priorities.SelectedItem=priority)));
         menu.Items.Add(layers);
         var looks=new Forms.ToolStripMenuItem("桌寵外觀");
-        foreach(var appearance in Enum.GetValues<PetAppearance>())looks.DropDownItems.Add(UiText.Label(appearance),null,(_,_)=>Dispatcher.Invoke(()=>Appearances.SelectedItem=appearance));
+        foreach(var mode in Enum.GetValues<PresenceMode>())looks.DropDownItems.Add(PresenceLabel(mode),null,(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(()=>PresenceOptions.SelectedIndex=(int)mode)));
         menu.Items.Add(looks);Add("結束",()=>RequestExit());
         tray=new Forms.NotifyIcon{Text="Desktop Life",Icon=System.Drawing.SystemIcons.Application,ContextMenuStrip=menu,Visible=true};
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(()=>{Show();WindowState=WindowState.Normal;Activate();});
@@ -33,24 +33,30 @@ public partial class MainWindow
         StateChanged+=(_,_)=>{if(WindowState==WindowState.Minimized)Hide();};
         Closed+=(_,_)=>{visibilityTimer.Stop();tray.Visible=false;tray.Dispose();menu.Dispose();};
     }
+    private void InvokeTrayAction(Action action){if(!saveClosing)action();}
     private void SetPaused(bool paused)
     {
         aiPaused=paused;Learning.Trace.Clear();Pet.SetPaused(paused);
+        foreach(var character in secondaryCharacters)character.SetPaused(paused);
         if(!paused){lastLearningTick=lifeClock.Elapsed.TotalSeconds;runningAction=null;}
         HitStatus.Text=paused?"自主行為已暫停；生理與感測持續更新，暫不接受獎勵。":"自主行為已恢復。";
     }
     private void UpdatePetVisibility(ForegroundState? diagnosticState=null)
     {
         var visible=DisplayPolicy.Visible(settings.DisplayPriority,diagnosticState??FullscreenDetector.Read(DisplayWorkspace.Active.Handle),userHidden);
-        foreach(var surface in Pet.Surfaces)
+        foreach(var surface in Pet.Surfaces.Concat(secondaryCharacters.Select(character=>(Window)character.Window)))
         {
             var topmost=settings.DisplayPriority!=DisplayPriority.Desktop;
             if(surface.Topmost!=topmost)surface.Topmost=topmost;
-            if(visible)
+            var resident=surface is PetWindow window?secondaryCharacters.FirstOrDefault(character=>character.Window==window):null;
+            var kind=surface==Pet?settings.PetAppearance:resident?.Kind;
+            var characterVisible=visible&&(kind is null||PresencePolicy.Includes(CurrentPresence,kind.Value));
+            if(characterVisible)
             {
                 if(!surface.IsVisible)surface.Show();
             }
-            else if(surface.IsVisible)surface.Hide();
+            else if(surface.IsVisible)
+            {SuspendCharacterPresence(surface);}
         }
         if(visible)
         {
@@ -58,21 +64,21 @@ public partial class MainWindow
             static nint Handle(Window surface)=>new System.Windows.Interop.WindowInteropHelper(surface).Handle;
             // Anchor the whole group once. Anchoring every window separately
             // reverses the group on every visibility tick and causes flicker.
-            if(settings.DisplayPriority==DisplayPriority.Desktop && !FullscreenDetector.PlaceAtDesktopLevel(Handle(ordered[0])))
+            if(ordered.Length>0&&settings.DisplayPriority==DisplayPriority.Desktop && !FullscreenDetector.PlaceAtDesktopLevel(Handle(ordered[0])))
             {
-                foreach(var surface in ordered)surface.Hide();
+                foreach(var surface in ordered)SuspendCharacterPresence(surface);
                 return;
             }
             for(var i=1;i<ordered.Length;i++)DesktopInteraction.PlaceAbove(Handle(ordered[i]),Handle(ordered[i-1]));
         }
-        if(!visible)Learning.Trace.Clear();
+        if(!visible){Learning.Trace.Clear();foreach(var character in secondaryCharacters)character.Learning.Trace.Clear();}
     }
 
     private Window[] SurfaceBackToFront()
     {
-        var actors=new[]{(Window)Pet}.Concat(Pet.AllToys).ToArray();
-        static double Feet(Window surface)=>surface is ToyWindow toy?toy.Model.Y+InteractiveToy.Size:surface.Top+surface.Height;
-        static double Center(Window surface)=>surface is ToyWindow toy?toy.Model.X+InteractiveToy.Size/2:surface.Left+surface.Width/2;
+        var actors=characterWindows.Where(window=>window.IsVisible).Cast<Window>().Concat(Pet.AllToys).ToArray();
+        static double Feet(Window surface)=>surface is ToyWindow toy?toy.Model.Y+InteractiveToy.Size:surface is PetWindow pet?pet.Position.Y+pet.Height:DisplayWorkspace.RoomPosition(surface).Y+surface.Height;
+        static double Center(Window surface)=>surface is ToyWindow toy?toy.Model.X+InteractiveToy.Size/2:surface is PetWindow pet?pet.Position.X+pet.Width/2:DisplayWorkspace.RoomPosition(surface).X+surface.Width/2;
         double Depth(Window surface)
         {
             var depth=Feet(surface);
@@ -87,7 +93,7 @@ public partial class MainWindow
             }
             return depth;
         }
-        return new[]{(Window)Pet.Art}.Concat(Pet.Furniture.Cast<Window>().Concat(actors).OrderBy(Depth)).ToArray();
+        return Pet.HouseSurfaces.Concat(new[]{(Window)Pet.Art}).Concat(Pet.Furniture.Cast<Window>().Concat(actors).OrderBy(Depth)).ToArray();
     }
 
     private void PauseAi(object sender,RoutedEventArgs e)=>SetPaused(!aiPaused);

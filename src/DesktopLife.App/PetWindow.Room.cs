@@ -18,37 +18,38 @@ public partial class PetWindow
     public int TeaserContactCount { get; private set; }
     public void RestoreRoom(RoomState state,BodyBounds? legacyBounds=null)
     {
-        state.Validate();var from=state.WorkArea??legacyBounds??Bounds();
+        state.Validate();ConfigureHouse(state.FloorCount,false);var from=state.WorkArea??legacyBounds??Bounds();
         RoomPoint Map(RoomPoint point,double w,double h)=>RoomCoordinates.Rehome(point,from,Bounds(),w,h);
-        if(state.Ball is {} ball){var p=Map(ball,40,40);Ball.Model.Place(p.X,p.Y,Bounds());}
-        if(state.Square is {} square){var p=Map(square,40,40);Square.Model.Place(p.X,p.Y,Bounds());}
+        if(state.Ball is {} ball){var p=Map(ball,40,40);Ball.Model.Place(p.X,p.Y,ToyBounds);}
+        if(state.Square is {} square){var p=Map(square,40,40);Square.Model.Place(p.X,p.Y,ToyBounds);}
         foreach(var item in state.Items)
         {var size=item.Kind is FurnitureKind.Yarn or FurnitureKind.BellBall or FurnitureKind.ToyMouse?(40d,40d):RoomWindow.Size(item.Kind);var p=Map(new(item.X,item.Y),size.Item1,size.Item2);AddRoomItem(item with{X=p.X,Y=p.Y});}
     }
-    public RoomState CaptureRoom()=>new(){WorkArea=Bounds(),Ball=new(Ball.Model.X,Ball.Model.Y),Square=new(Square.Model.X,Square.Model.Y),Items=Furniture.Select(f=>f.Item).Concat(ExtraToys.Select(t=>t.RoomItem! with{X=t.Model.X,Y=t.Model.Y})).ToList()};
+    public RoomState CaptureRoom()=>new(){WorkArea=Bounds(),FloorCount=House?.FloorCount??1,Ball=new(Ball.Model.X,Ball.Model.Y),Square=new(Square.Model.X,Square.Model.Y),Items=Furniture.Select(f=>f.Item).Concat(ExtraToys.Select(t=>t.RoomItem! with{X=t.Model.X,Y=t.Model.Y,FloorIndex=BaseFloor(t.Model.Y+40)})).ToList()};
     public void RemapWorkspace(BodyBounds from,BodyBounds to)
     {
         CancelRoute();sequence?.Interrupt(BehaviorInterruptReason.Safety);
-        var p=RoomCoordinates.Rehome(new(body.X,body.Y),from,to,116,144);body.Place(p.X,p.Y,to);petGravity.VX=petGravity.VY=0;
+        var p=RoomCoordinates.Rehome(new(body.X,body.Y),from,to,BodyWidth,BodyHeight);body.Place(p.X,p.Y,to);petGravity.VX=petGravity.VY=0;
+        if(worldOwner is not null){ApplyPosition();return;}
         foreach(var toy in AllToys){p=RoomCoordinates.Rehome(new(toy.Model.X,toy.Model.Y),from,to,40,40);toy.Model.Place(p.X,p.Y,to);toy.Step(0);}
         foreach(var furniture in Furniture){p=RoomCoordinates.Rehome(new(furniture.Item.X,furniture.Item.Y),from,to,furniture.Width,furniture.Height);furniture.Relocate(p.X,p.Y);}
         Art.Update(to,[],body.Action,clock.Elapsed.TotalSeconds,body.X,body.Y);ApplyPosition();
     }
     public void SetRoomEditing(bool editing)
-    {EditingRoom=editing;if(editing){sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute();queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
+    {EditingRoom=editing;if(editing){sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute(preserveRecovery:true);queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
     public void AddRoomItem(RoomItem item)
     {
         if(Furniture.Count+ExtraToys.Count>=24)return;
         if(item.Kind is FurnitureKind.Yarn or FurnitureKind.BellBall or FurnitureKind.ToyMouse)
         {
-            var toy=new ToyWindow(true,Bounds()){RoomItem=item,Title="毛線球"};toy.Model.Place(item.X,item.Y,Bounds());
+            var toy=new ToyWindow(true,ToyBounds){RoomItem=item,RoomBounds=ToyBounds,Title="毛線球"};toy.Model.Place(item.X,item.Y,ToyBounds);
             toy.Rang+=strength=>SoundRequested?.Invoke(PetSound.Bell,strength);
             toy.SetToyAppearance(item.Kind);toy.Played+=()=>{requestedToy=toy;InteractionRequested?.Invoke(BodyAction.PlayToy);RoomChanged?.Invoke();};
             toy.RemoveRequested+=()=>{ExtraToys.Remove(toy);toy.Close();RoomChanged?.Invoke();};ExtraToys.Add(toy);
         }
         else
         {
-            var window=new RoomWindow(item);window.SetEditing(EditingRoom);window.Changed+=()=>RoomChanged?.Invoke();
+            var window=new RoomWindow(item);window.SetSceneScale(House?.SceneScale??1);window.SetEditing(EditingRoom);window.Changed+=()=>{if(House is {} h)window.SetFloor(h.Floors.OrderBy(f=>Math.Abs(f.Y-window.Item.Y-window.Height)).First().Index);RoomChanged?.Invoke();};
             window.Removed+=f=>{if(teaserTarget==f){teaserTarget=null;teaserPawTarget=null;}Furniture.Remove(f);restPreference.Prune(Furniture.Select(w=>w.Item.Id));f.Close();RoomChanged?.Invoke();};Furniture.Add(window);
         }
     }
@@ -65,18 +66,19 @@ public partial class PetWindow
     public int PlatformRebuilds {get;private set;}
     private IReadOnlyList<RoomPlatform> RoomPlatforms()
     {
-        var hash=new HashCode();foreach(var f in Furniture){hash.Add(f.Item);hash.Add(f.Left);hash.Add(f.Top);}var key=hash.ToHashCode();
-        if(key!=platformCacheKey){platformCacheKey=key;platformCache=Furniture.SelectMany(f=>f.Platforms).ToArray();PlatformRebuilds++;}
+        if(worldOwner is not null)return worldOwner.RoomPlatforms();
+        var hash=new HashCode();hash.Add(House);foreach(var f in Furniture){hash.Add(f.Item);hash.Add(f.Item.X);hash.Add(f.Item.Y);}var key=hash.ToHashCode();
+        if(key!=platformCacheKey){platformCacheKey=key;platformCache=Furniture.SelectMany(f=>f.Platforms).Concat((IEnumerable<RoomPlatform>?)House?.Platforms??Array.Empty<RoomPlatform>()).ToArray();PlatformRebuilds++;}
         return platformCache;
     }
     private bool PlayTeaser(double dt, double now, double speed)
     {
-        if(teaserTarget?.Teaser is not {} pendulum)return false;
+        if(!CanPlayTeaser(teaserTarget)||teaserTarget?.Teaser is not {} pendulum)return false;
         var platform=teaserTarget.Platforms[1];
         // Approach from the lower shelf, on the right of the string anchor.
         // The upper shelf is above the string; sitting there cannot reach this ball.
-        var x=teaserTarget.Left+25;
-        var y=platform.Y-DesktopBody.Height;
+        var x=teaserTarget.Item.X+25;
+        var y=platform.Y-BodyHeight;
         MovePetToward(x,y,dt,Bounds(),speed);
         var ball=teaserTarget.TeaserPosition;
         facing=-1;
@@ -84,7 +86,7 @@ public partial class PetWindow
         {poseAction=BodyAction.Walk;lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
         poseAction=BodyAction.ObserveCursor;
         if(feline.IsTurning){lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
-        var local=new Point(ball.X-body.X,ball.Y-body.Y);
+        var local=new Point((ball.X-body.X)/(BodyHeight/144),(ball.Y-body.Y)/(BodyHeight/144));
         var shoulder=new Point(40,114);
         if(local.X<6||local.X>110||local.Y<72||local.Y>140||(local-shoulder).Length>58)
         {lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
@@ -105,8 +107,16 @@ public partial class PetWindow
     private void StepPetGravity(double dt)
     {
         if(drag.Active)return;
+        if(houseControlledThisFrame)return;
+        if(houseRoute.TryPeek(out var travel)&&travel.Kind==HouseTravelKind.Stair&&House is {} h)
+        {
+            var support=h.Stairs.Single(s=>s.ReservationKey==travel.ConnectorId).Support;
+            var center=body.X+HalfWidth;
+            if(center>=support.X&&center<=support.X+support.Width&&Math.Abs(support.HeightAt(center)-body.Y-BodyHeight)<1)
+            {petGravity.PlaceSupported(body.X,body.Y,BodyWidth,BodyHeight,support);return;}
+        }
         petGravity.X=body.X;petGravity.Y=body.Y;
-        petGravity.Step(dt,Bounds(),DesktopBody.Width,DesktopBody.Height,0,RoomPlatforms());
+        petGravity.Step(dt,Bounds(),BodyWidth,BodyHeight,0,RoomPlatforms());
         body.Place(petGravity.X,petGravity.Y,Bounds());
         if(!petGravity.Grounded)poseAction=BodyAction.Fall;
         else
@@ -114,18 +124,39 @@ public partial class PetWindow
             if(poseAction==BodyAction.Fall)poseAction=null;
             if(body.Action==BodyAction.Fall)body.Action=BodyAction.Idle;
         }
-        foreach(var toy in AllToys)ToyContactPhysics.Separate(toy.Model,body.X,body.Y,Bounds());
+        foreach(var toy in AllToys)ToyContactPhysics.Separate(toy.Model,body.X,body.Y,Bounds(),BodyWidth,BodyHeight);
     }
     private ObjectApproach ToyApproach(ToyWindow toy)
     {
-        var bounds=Bounds();var tx=toy.Model.X+20;var petCenter=body.X+58;
-        var left=tx-50-58;var right=tx+50-58;
-        var px=petCenter<tx?left:right;
-        if(px<bounds.Left)px=right;if(px>bounds.Left+bounds.Width-116)px=left;
-        px=Math.Clamp(px,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-116));
-        var direction=tx-(px+58);
-        return new(px,Math.Clamp(toy.Model.Y+40-144,bounds.Top,bounds.Top+Math.Max(0,bounds.Height-144)),Math.Sign(direction),-.35);
+        TryToyApproach(toy,out var approach);return approach;
+    }
+    private bool TryToyApproach(ToyWindow toy,out ObjectApproach approach)
+    {
+        var bounds=Bounds();var ball=toy.Model;
+        var first=ToyContactPhysics.Approach(ball.X,ball.Y,body.X,bounds,BodyWidth,BodyHeight);
+        var center=ball.X+InteractiveToy.Size/2;
+        var other=ToyContactPhysics.Approach(ball.X,ball.Y,first.PushX>0?center:center-BodyWidth,bounds,BodyWidth,BodyHeight);
+        var supports=House is null?RoomPlatforms().Append(new(bounds.Left,bounds.Width,bounds.Top+bounds.Height,bounds.Top+bounds.Height)).ToArray():RoomPlatforms();
+        var minimumLocalY=appearance==PetAppearance.Cat?72:96;
+        approach=first;
+        foreach(var stance in new[]{first,other})
+        {
+            var footX=stance.X+HalfWidth;
+            foreach(var platform in supports.Where(p=>footX>=p.X&&footX<=p.X+p.Width&&p.HeightAt(footX)>=bounds.Top+BodyHeight)
+                .OrderBy(p=>Math.Abs(p.HeightAt(footX)-ball.Y-InteractiveToy.Size)))
+            {
+                var feet=platform.HeightAt(footX);
+                if(ToyContactPhysics.ReachableContactPoint(ball.X,ball.Y,stance.X,feet-BodyHeight,BodyHeight,minimumLocalY) is null)continue;
+                approach=stance with{Y=feet-BodyHeight};return true;
+            }
+        }
+        // A moving ball can pass above the nose or fly between shelves. Track a real
+        // support below its projected approach rather than chasing its airborne Y.
+        var projected=supports.Where(p=>first.X+HalfWidth>=p.X&&first.X+HalfWidth<=p.X+p.Width&&p.HeightAt(first.X+HalfWidth)>=Math.Max(bounds.Top+BodyHeight,ball.Y+InteractiveToy.Size-GravityBody.PlatformContactTolerance))
+            .OrderBy(p=>Math.Abs(p.HeightAt(first.X+HalfWidth)-ball.Y-InteractiveToy.Size)).FirstOrDefault();
+        if(projected.Width>0)approach=first with{Y=projected.HeightAt(first.X+HalfWidth)-BodyHeight};
+        return !ball.IsResting&&projected.Width>0;
     }
     private bool TouchingToy(ToyWindow toy)
-    {return Math.Abs(body.X+58-(toy.Model.X+20))<80 && Math.Abs(body.Y+126-(toy.Model.Y+20))<36;}
+    {var bodyScale=BodyHeight/CharacterGeometry.CanonicalHeight;return Math.Abs(body.X+HalfWidth-(toy.Model.X+20))<80*bodyScale&&ToyContactPhysics.ReachableContactPoint(toy.Model.X,toy.Model.Y,body.X,body.Y,BodyHeight,appearance==PetAppearance.Cat?72:96) is not null;}
 }

@@ -1,4 +1,4 @@
-namespace DesktopLife.Core;
+﻿namespace DesktopLife.Core;
 public interface INoteGenerator { string Generate(PetState state); }
 public sealed class TemplateNoteGenerator : INoteGenerator
 {
@@ -26,4 +26,4 @@ public static class DoodleGenerator
         return strokes;
     }
 }
-public sealed record CreativeWork(DoodlePattern Pattern,string? Text,double X,double Y,int Seed,DateTimeOffset CreatedAt,bool Keep=false,GeneratedDrawing? Drawing=null);
+public sealed record CreativeWork(DoodlePattern Pattern,string? Text,double X,double Y,int Seed,DateTimeOffset CreatedAt,bool Keep=false,GeneratedDrawing? Drawing=null,string? DoodleTemplateId=null);

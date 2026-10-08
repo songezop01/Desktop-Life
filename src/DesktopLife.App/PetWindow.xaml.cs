@@ -14,18 +14,21 @@ public partial class PetWindow : Window, IAnimationController
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly FelineVisual feline=new(){Width=116,Height=144,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0)};
+    private readonly CompanionSpriteVisual sprite=new(){HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
+    private FrameworkElement VisibleCharacterVisual=>sprite.Visibility==Visibility.Visible?sprite:feline;
+    private bool RequiresContactRig=>appearance==PetAppearance.Cat&&(teaserPawTarget is not null||sequence?.Phase==BehaviorPhase.Scratch);
     private double previous;
     private double speechUntil;
 
     private PetAppearance appearance;
     public PetState EmotionalState {get;set;}=new();
     public void Say(string text,double seconds=4)
-    {SpeechText.Text=text;SpeechBubble.Visibility=Visibility.Visible;speechUntil=clock.Elapsed.TotalSeconds+seconds;}
+    {if(!CharacterCapability.Allows(appearance,CharacterExpression.Speak))return;SpeechText.Text=text;SpeechBubble.Visibility=Visibility.Visible;speechUntil=clock.Elapsed.TotalSeconds+seconds;}
     private readonly RotateTransform headTilt=new(),earLeft=new(),earRight=new();
     private readonly TranslateTransform eyeGaze=new();
     public ToyWindow Square {get;}
     public ToyWindow Ball {get;}
-    public IEnumerable<Window> Surfaces=>Furniture.Cast<Window>().Concat(new Window[]{Art,this,Square,Ball}).Concat(ExtraToys);
+    public IEnumerable<Window> Surfaces=>HouseSurfaces.Concat(Furniture.Cast<Window>().Concat(new Window[]{Art,this,Square,Ball}).Concat(ExtraToys));
     private readonly SurfaceDrag drag;
     private double interactionUntil;
     public bool Interacting=>drag.Active||clock.Elapsed.TotalSeconds<interactionUntil;
@@ -38,7 +41,22 @@ public partial class PetWindow : Window, IAnimationController
     public event Action<string,double,double>? ShortcutPushRequested;
     public bool AllowCursorAttraction {get;set;}=true;
     private (double X,double Y)? previousCursor;
-    public ArtWindow Art { get; } = new();
+    public ArtWindow Art { get; }
+    private readonly PetWindow? worldOwner;
+    private readonly List<PetWindow> sharedCharacters=[];
+    public HouseholdOccupancy Occupancy {get;} = new();
+    public RoomPoint Position=>new(body.X,body.Y);
+    public void RestorePosition(RoomPoint point){body.Place(point.X,point.Y,Bounds());ApplyPosition();}
+    public void SuspendPresence()
+    {
+        Occupancy.Release(appearance);sequence=null;homeTarget=null;restSpot=null;queuedAction=null;
+        requestedCare=null;activeCare=null;requestedActivity=null;requestedToy=null;playTarget=null;
+        teaserTarget=null;teaserPawTarget=null;attentionPoint=null;sequencePoseAge=null;feline.Clip=null;
+        body.Action=BodyAction.Idle;poseAction=BodyAction.Idle;HasCreativeOutput=false;
+        // Cancel the old activity and route, but pause an unfinished safety escape.
+        // Visible simulation resumes it before accepting another activity.
+        SpeechBubble.Visibility=Visibility.Collapsed;CancelRoute(preserveRecovery:true);Hide();
+    }
     private (double X,double Y)? cursor;
     private (double X,double Y) target;
     private bool paused;
@@ -54,7 +72,17 @@ public partial class PetWindow : Window, IAnimationController
     private readonly ScaleTransform bodyScale=new();
     public void SetAppearance(PetAppearance appearance)
     {
+        if(this.appearance!=appearance)
+        {
+            Occupancy.Release(this.appearance);
+            BehaviorCompleted?.Invoke(new(LifeBehavior.Observe,false,false,0,false));
+            sequence=null;queuedAction=null;requestedCare=null;activeCare=null;homeTarget=null;feline.Clip=null;CancelRoute();
+        }
         this.appearance=appearance;
+        sprite.SetCharacter(appearance);
+        ApplyCharacterGeometry();
+        SpeechBubble.Visibility=Visibility.Collapsed;
+        if(!CharacterCapability.Allows(appearance,body.Action)) {sequence=null;queuedAction=null;body.Action=BodyAction.Idle;}
         GirlVisual.Visibility=appearance==PetAppearance.Girl?Visibility.Visible:Visibility.Collapsed;
         CatVisual.Visibility=appearance==PetAppearance.Cat?Visibility.Visible:Visibility.Collapsed;
         ApplyPose();
@@ -65,10 +93,15 @@ public partial class PetWindow : Window, IAnimationController
     public event Action<CareKind>? CareRequested;
     public event Action<BodyAction,double,double>? CreativeAction;
     public BodyAction CurrentAction => body.Action;
-    public PetWindow()
+    public PetWindow(PetWindow? sharedWorld=null)
     {
+        worldOwner=sharedWorld;
+        Art=sharedWorld?.Art??new();
+        if(sharedWorld is not null){Furniture=sharedWorld.Furniture;ExtraToys=sharedWorld.ExtraToys;Occupancy=sharedWorld.Occupancy;sharedWorld.sharedCharacters.Add(this);}
         InitializeComponent();
         Character.Children.Add(feline);
+        Character.Children.Add(sprite);
+        Character.Children.Add(furnitureForeground);
         SourceInitialized+=(_,_)=>{DesktopInteraction.MakeNonActivating(new System.Windows.Interop.WindowInteropHelper(this).Handle);ApplyPosition();};
         var group=new TransformGroup();group.Children.Add(bodyScale);group.Children.Add(bodyTilt);group.Children.Add(poseOffset);
         GirlVisual.RenderTransformOrigin=new Point(.5,.6);GirlVisual.RenderTransform=group;Face.RenderTransform=gazeOffset;CatFace.RenderTransform=gazeOffset;
@@ -79,11 +112,13 @@ public partial class PetWindow : Window, IAnimationController
         CatEarR.RenderTransform=earRight;earRight.CenterX=56;earRight.CenterY=28;
         CatEyes.RenderTransform=eyeGaze;
         CatTail.RenderTransform=tailSwing;tailSwing.CenterX=61;tailSwing.CenterY=88;
-        Square=new(false,Bounds());Ball=new(true,Bounds());
+        Square=sharedWorld?.Square??new(false,Bounds());Ball=sharedWorld?.Ball??new(true,Bounds());
+        if(sharedWorld is null){
         Square.Played+=()=>{InteractionRequested?.Invoke(BodyAction.PseudoPushIcon);RoomChanged?.Invoke();};
         Ball.Played+=()=>{requestedToy=Ball;InteractionRequested?.Invoke(BodyAction.PlayToy);RoomChanged?.Invoke();};
-        drag=new(this,Character,held=>{if(held){CancelRoute();sequence?.Interrupt(BehaviorInterruptReason.Safety);}else interactionUntil=clock.Elapsed.TotalSeconds+2;},
-            (x,y)=>{body.Place(x,y,Bounds());ApplyPosition();},
+        }
+        drag=new(this,Character,held=>{if(held){CancelRoute(preserveRecovery:true);sequence?.Interrupt(BehaviorInterruptReason.Safety);}else interactionUntil=clock.Elapsed.TotalSeconds+2;},
+            (x,y)=>{ClearHouseRoute();body.Place(x,y,Bounds());ApplyPosition();},
             moved=>{if(!moved){interactionUntil=0;Hit?.Invoke(RewardButton.Left);}else {petGravity.VX=drag!.VelocityX*.4;petGravity.VY=drag.VelocityY;body.Action=BodyAction.Fall;ApplyPose();}});
         var menu=new ContextMenu();
         foreach(var (label,kind) in new[]{("餵飯飯",CareKind.Feed),("摸摸頭",CareKind.Pet),("一起玩球",CareKind.Play),("梳理毛毛",CareKind.Groom),("哄牠睡覺",CareKind.Rest)})
@@ -91,19 +126,24 @@ public partial class PetWindow : Window, IAnimationController
         Character.ContextMenu=menu;
         ResetPosition();
         timer.Tick += Tick;
-        IsVisibleChanged += (_,_) => timer.Interval=TimeSpan.FromMilliseconds(IsVisible?33:500);
-        Loaded += (_, _) => {timer.Start();};
-        Closed += (_, _) => {timer.Stop();Art.Close();Square.Close();Ball.Close();foreach(var f in Furniture)f.Close();foreach(var t in ExtraToys)t.Close();};
+        IsVisibleChanged += (_,_) => {
+            timer.Interval=TimeSpan.FromMilliseconds(IsVisible?33:500);
+            if(worldOwner is not null){if(IsVisible&&simulationEnabled){previous=clock.Elapsed.TotalSeconds;timer.Start();}else timer.Stop();}
+        };
+        Loaded += (_, _) => {if(simulationEnabled)timer.Start();};
+        Closed += (_, _) => {timer.Stop();Occupancy.Release(appearance);if(worldOwner is null){houseSurface?.Close();Art.Close();Square.Close();Ball.Close();foreach(var f in Furniture)f.Close();foreach(var t in ExtraToys)t.Close();}};
     }
     private static BodyBounds Bounds()
     {
         return DisplayWorkspace.Bounds;
     }
-    public void ResetPosition() { homeTarget=null;feline.Clip=null;sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
+    public void ResetPosition() { Occupancy.Release(appearance);homeTarget=null;feline.Clip=null;sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
     public void SetAction(BodyAction action)
     {
+        action=CharacterCapability.Resolve(appearance,action);
         if(Interacting)return;
         if(FinishingMotion){queuedAction=action;return;}
+        Occupancy.Release(appearance);
         CancelRoute();
         if(appearance==PetAppearance.Cat)
         {
@@ -115,15 +155,15 @@ public partial class PetWindow : Window, IAnimationController
         teaserTarget=null;teaserPawTarget=null;
         if(action==BodyAction.PlayToy)
         {
-            playTarget=AllToys.Where(t=>t!=Square).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();
-            if(++playSession%2==1)teaserTarget=Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Left-body.X)).FirstOrDefault();
+            playTarget=AllToys.Where(t=>t!=Square&&CanPlayToy(t)).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();
+            if(++playSession%2==1&&appearance==PetAppearance.Cat)teaserTarget=Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Item.X-body.X)).FirstOrDefault();
             lastTeaserTap=clock.Elapsed.TotalSeconds;
         }
         ChooseTarget();
         BeginSequence(action);
         selectedShortcut=Shortcuts.OrderBy(i=>Math.Abs(body.X-i.X)+Math.Abs(body.Y-i.Y)).FirstOrDefault()?.Id;
         ApplyPose();
-        if(action is BodyAction.DrawDoodle or BodyAction.WriteNote)CreativeAction?.Invoke(action,body.X-Bounds().Left+80,body.Y-Bounds().Top-60);
+        // Creative output is emitted only after the room activity reaches its completion phase.
     }
     public Affordances SenseAffordances()
     {
@@ -134,18 +174,23 @@ public partial class PetWindow : Window, IAnimationController
     public void Play(BodyAction action) => SetAction(action);
     private void Tick(object? sender, EventArgs e)
     {
+        houseControlledThisFrame=false;
         var now = clock.Elapsed.TotalSeconds;
         var dt = Math.Min(now - previous, 0.1);
         previous = now;
+        if(!IsVisible)timer.Interval=TimeSpan.FromMilliseconds(sharedCharacters.Any(c=>c.IsVisible)?33:500);
+        if(worldOwner is null){
+            foreach(var furniture in Furniture)furniture.StepTeaser(dt);
+            var sharedPlatforms=RoomPlatforms();var sharedToys=AllToys.ToArray();
+            foreach(var toy in sharedToys){toy.Platforms=sharedPlatforms;toy.Step(dt);}
+            for(var i=0;i<sharedToys.Length;i++)for(var j=i+1;j<sharedToys.Length;j++)InteractiveToy.Collide(sharedToys[i].Model,sharedToys[j].Model);
+        }
         if(!IsVisible)return;
         RecordStressFrame();
-        var interval=sequence?.Phase==BehaviorPhase.Sleep&&AllToys.All(t=>t.Model.IsResting)&&Furniture.All(f=>f.Teaser is null||f.Teaser.IsResting)?100:33;
+        var interval=sequence?.Phase==BehaviorPhase.Sleep&&AllToys.All(t=>t.Model.IsResting)&&Furniture.All(f=>f.Teaser is null||f.Teaser.IsResting)?100:body.Action is BodyAction.Walk or BodyAction.Wander or BodyAction.Explore or BodyAction.ChaseCursor or BodyAction.AvoidCursor||HouseMotionActive||sprite.TransitionRemainingSeconds>0?16:33;
         if(timer.Interval.TotalMilliseconds!=interval)timer.Interval=TimeSpan.FromMilliseconds(interval);
         if(queuedAction is {} queued&&!FinishingMotion&&!SequenceCommitted&&!Interacting){queuedAction=null;SetAction(queued);}
-        foreach(var furniture in Furniture)furniture.StepTeaser(dt);
         var platforms=RoomPlatforms();var toys=AllToys.ToArray();
-        foreach(var toy in toys){toy.Platforms=platforms;toy.Step(dt);}
-        for(var i=0;i<toys.Length;i++)for(var j=i+1;j<toys.Length;j++)InteractiveToy.Collide(toys[i].Model,toys[j].Model);
         if(EditingRoom)
         {
             StepPetGravity(dt);sequence?.Step(dt,new(Grounded:petGravity.Grounded));
@@ -161,10 +206,16 @@ public partial class PetWindow : Window, IAnimationController
             ApplyPose();
             return;
         }
+        if(sprite.Visibility==Visibility.Visible&&sprite.IsStandingUp)
+        {
+            // Finish the planted sit-to-stand frames before translating the body.
+            // Needs and learning keep their own cadence; gravity still validates support.
+            poseAction=BodyAction.Walk;StepPetGravity(dt);ApplyPosition();ApplyPose();return;
+        }
         SenseAffordances();
         if(AllowCursorAttraction && body.Action is not (BodyAction.Sleep or BodyAction.RestInCorner) && cursor is {} pointer && previousCursor is {} old)
         {
-            var distance=Math.Sqrt(Math.Pow(pointer.X-body.X-58,2)+Math.Pow(pointer.Y-body.Y-72,2));
+            var distance=Math.Sqrt(Math.Pow(pointer.X-body.X-HalfWidth,2)+Math.Pow(pointer.Y-body.Y-72,2));
             var moved=Math.Abs(pointer.X-old.X)+Math.Abs(pointer.Y-old.Y)>3;
             if(moved&&distance<360&&now-lastAttention>8+12*(1-Parameters.Social.Affinity)&&!Parameters.Social.AvoidBriefly)
             {lastAttention=now;InteractionRequested?.Invoke(distance<100?BodyAction.ObserveCursor:BodyAction.ChaseCursor);}
@@ -208,24 +259,27 @@ public partial class PetWindow : Window, IAnimationController
                     {shortcutPushed=true;lastShortcutPush=now;ShortcutPushRequested?.Invoke(shortcut.Id,shortcut.X+approach.PushX*96,shortcut.Y+approach.PushY*96);}
                 }
                 break;
-            case BodyAction.RestInCorner:case BodyAction.Hide:MovePetToward(bounds.Left+8,bounds.Top+bounds.Height-DesktopBody.Height,dt,bounds,movement.Speed);break;
+            case BodyAction.RestInCorner:case BodyAction.Hide:MovePetToward(bounds.Left+8,LocalFloor-BodyHeight,dt,bounds,movement.Speed);break;
         }
         var activeToy=!sequenced?(body.Action==BodyAction.PseudoPushIcon?Square:body.Action==BodyAction.PlayToy&&teaserTarget is null?playTarget??Ball:null):null;
-        if(activeToy is not null && !activeToy.Model.Held && now-lastToyKick>.6)
+        if(activeToy is not null && CanPlayToy(activeToy) && Occupancy.TryAcquire(ToyId(activeToy),appearance) && !activeToy.Model.Held && now-lastToyKick>.6)
         {
             var contact=ToyApproach(activeToy);
             if(TouchingToy(activeToy))
-            {var kick=ToyContactPhysics.Push(activeToy.Model.X,bounds,contact.PushX,Parameters.Play.Force);activeToy.Model.Kick(kick.X,kick.Y);lastToyKick=now;facing=contact.PushX;poseAction=BodyAction.BatToy;}
+            {var kick=ToyContactPhysics.Push(activeToy.Model.X,bounds,contact.PushX,Parameters.Play.Force);activeToy.Model.Kick(kick.X,kick.Y);lastToyKick=now;facing=contact.PushX;poseAction=PlayContactPose;}
         }
         if(activeToy is not null && !TouchingToy(activeToy))poseAction=BodyAction.Walk;
-        else if(activeToy is not null)poseAction=BodyAction.BatToy;
+        else if(activeToy is not null)poseAction=PlayContactPose;
         // Finish in-flight navigation even when a wander pause or social wait stops requesting movement.
-        if(!recovering&&!navigationStepped&&FinishingMotion&&routeGoal is {} goal)Navigate(goal.X,goal.Y,dt,bounds,movement.Speed);
-        var attempting=MovementPhase is NavigationPhase.Approaching or NavigationPhase.Unreachable;
-        if(navigationProgress.Stalled(body.X,body.Y,dt,attempting))RecoverNavigation();
+        if(!recovering&&!navigationStepped&&houseGoal is {} hg)Navigate(hg.X,hg.Feet-BodyHeight,dt,bounds,movement.Speed);
+        else if(!recovering&&!navigationStepped&&FinishingMotion&&routeGoal is {} goal)Navigate(goal.X,goal.Y,dt,bounds,movement.Speed);
+        // A rejected route is not an attempted movement. Its owner can select a
+        // fallback; the stall detector must not turn it into a second failure.
+        ObserveNavigationProgress(dt);
         StepPetGravity(dt);
-        Art.Update(bounds,items,body.Action,now,body.X,body.Y);
+        if(worldOwner is null)Art.Update(bounds,items,body.Action,now,body.X,body.Y);
         if(Math.Abs(body.X-beforeX)>.05)facing=body.X>beforeX?1:-1;
+        sprite.AdvanceWalk(Math.Abs(body.X-beforeX)/(BodyHeight/144));
         ApplyPosition();
         ApplyPose();
     }
@@ -235,14 +289,19 @@ public partial class PetWindow : Window, IAnimationController
         var angle=movementRandom.NextDouble()*Math.PI*2;
         var tx=body.X+Math.Cos(angle)*m.Distance;var ty=body.Y;
         if(movementRandom.NextDouble()<m.ObjectInterest*.4){tx=Ball.Model.X-70;ty=Ball.Model.Y-100;}
-        var edgeX=body.X<bounds.Left+bounds.Width/2?bounds.Left:bounds.Left+bounds.Width-DesktopBody.Width;
-        var edgeY=body.Y<bounds.Top+bounds.Height/2?bounds.Top:bounds.Top+bounds.Height-DesktopBody.Height;
-        target=(Math.Clamp(tx*(1-m.PreferredRegion)+edgeX*m.PreferredRegion,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-DesktopBody.Width)),
-            Math.Clamp(ty*(1-m.PreferredRegion)+edgeY*m.PreferredRegion,bounds.Top,bounds.Top+Math.Max(0,bounds.Height-DesktopBody.Height)));
+        var edgeX=body.X<bounds.Left+bounds.Width/2?bounds.Left:bounds.Left+bounds.Width-BodyWidth;
+        var edgeY=body.Y<bounds.Top+bounds.Height/2?bounds.Top:bounds.Top+bounds.Height-BodyHeight;
+        target=(Math.Clamp(tx*(1-m.PreferredRegion)+edgeX*m.PreferredRegion,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-BodyWidth)),
+            Math.Clamp(ty*(1-m.PreferredRegion)+edgeY*m.PreferredRegion,bounds.Top,bounds.Top+Math.Max(0,bounds.Height-BodyHeight)));
         if(Furniture.Count>0&&movementRandom.NextDouble()<.45)
         {
-            var reachable=RoomPlatforms().Where(p=>RoomNavigation.Plan(RoomPlatforms(),bounds,body.X+58,body.Y+144,p.X+p.Width/2,p.HeightAt(p.X+p.Width/2)) is not null).ToArray();
-            if(reachable.Length>0){var platform=reachable[movementRandom.Next(reachable.Length)];target=(platform.X+platform.Width/2-58,platform.HeightAt(platform.X+platform.Width/2)-144);}
+            var reachable=RoomPlatforms().Where(p=>CanReach(p.X+p.Width/2,p.HeightAt(p.X+p.Width/2))).ToArray();
+            if(reachable.Length>0){var platform=reachable[movementRandom.Next(reachable.Length)];target=(platform.X+platform.Width/2-HalfWidth,platform.HeightAt(platform.X+platform.Width/2)-BodyHeight);}
+        }
+        if(House is {} h && h.FloorCount>1 && movementRandom.NextDouble()<.45)
+        {
+            var floor=h.Floors[movementRandom.Next(h.FloorCount)];
+            target=(h.SafeFootX(floor.Index,target.X+HalfWidth,HalfWidth)-HalfWidth,floor.Y-BodyHeight);
         }
         lastTarget=clock.Elapsed.TotalSeconds;
     }
@@ -253,13 +312,16 @@ public partial class PetWindow : Window, IAnimationController
         ActionLabel.Text = UiText.Label(body.Action);
         if(clock.Elapsed.TotalSeconds>speechUntil)SpeechBubble.Visibility=Visibility.Collapsed;
         var t=sampleTime??clock.Elapsed.TotalSeconds;
-        var pose=PetPose.At(poseAction??body.Action,(sampleTime??clock.Elapsed.TotalSeconds)*Math.Clamp(Parameters.Movement.Speed/80,.5,1.8));
+        furnitureForeground.SetContext(Furniture,body.X,body.Y,BodyHeight/144,homeTarget?.Id);
+        if(sprite.Ready&&!RequiresContactRig)
+        {ApplyIllustratedPose(t);return;}
+        var pose=PetPose.At(CharacterCapability.Pose(appearance,poseAction??body.Action),(sampleTime??clock.Elapsed.TotalSeconds)*Math.Clamp(Parameters.Movement.Speed/80,.5,1.8));
         var blink=t%4.7<.16;
         Face.Text=pose.Sleeping||blink?"－ ᴗ －":body.Action==BodyAction.Nuzzle?"˘ ᴗ ˘":EmotionalState.Hunger>70?"• ﹏ •":"• ᴗ •";
         var happy=body.Action is BodyAction.Nuzzle or BodyAction.Groom;
         CatEyes.Visibility=blink||happy?Visibility.Collapsed:Visibility.Visible;
         CatClosedEyes.Visibility=blink||happy?Visibility.Visible:Visibility.Collapsed;
-        eyeGaze.X=cursor is {} eye?Math.Clamp((eye.X-body.X-58)/100,-2,2):0;
+        eyeGaze.X=cursor is {} eye?Math.Clamp((eye.X-body.X-HalfWidth)/100,-2,2):0;
         eyeGaze.Y=cursor is {} eyeY?Math.Clamp((eyeY.Y-body.Y-55)/150,-1,1):0;
         headTilt.Angle=body.Action==BodyAction.Eat?Math.Sin(t*7)*7+8:body.Action==BodyAction.Groom?Math.Sin(t*6)*8-12:body.Action==BodyAction.ObserveCursor?Math.Sin(t)*6:Math.Sin(t*1.3)*1.5;
         earLeft.Angle=Math.Sin(t*2)*3+(t%7<.5?Math.Sin(t*25)*12:0);
@@ -268,9 +330,9 @@ public partial class PetWindow : Window, IAnimationController
         PettingHand.Visibility=ShowHand?Visibility.Visible:Visibility.Collapsed;
         Canvas.SetLeft(PettingHand,40+Math.Sin(t*4)*8);Canvas.SetTop(PettingHand,20+Math.Cos(t*4)*2);
         Canvas.SetTop(GroomComb,67+Math.Sin(t*6)*6);
-        ToyPaw.Visibility=poseAction==BodyAction.BatToy||body.Action==BodyAction.BatToy?Visibility.Visible:Visibility.Collapsed;
+        ToyPaw.Visibility=appearance==PetAppearance.Cat&&(poseAction==BodyAction.BatToy||body.Action==BodyAction.BatToy)?Visibility.Visible:Visibility.Collapsed;
         ToyPaw.RenderTransform=new ScaleTransform(facing,1,58,0);
-        FoodBowl.Visibility=body.Action==BodyAction.Eat?Visibility.Visible:Visibility.Collapsed;
+        FoodBowl.Visibility=appearance==PetAppearance.Cat&&body.Action==BodyAction.Eat&&sequence?.Phase==BehaviorPhase.Work?Visibility.Visible:Visibility.Collapsed;
         Affection.Visibility=body.Action is BodyAction.Nuzzle or BodyAction.Greet?Visibility.Visible:Visibility.Collapsed;
         Canvas.SetTop(Affection,25-Math.Sin(t*2)*5);Affection.Opacity=.6+.4*Math.Abs(Math.Sin(t*2));
         SleepingCat.Visibility=pose.Sleeping&&appearance==PetAppearance.Cat?Visibility.Visible:Visibility.Collapsed;
@@ -296,11 +358,48 @@ public partial class PetWindow : Window, IAnimationController
             CatVisual.Visibility=SleepingCat.Visibility=Visibility.Collapsed;
             bodyTilt.Angle=0;bodyScale.ScaleX=bodyScale.ScaleY=1;poseOffset.Y=0;
             feline.Personality=BehaviorPersonality;
-            feline.Pose(poseAction??body.Action,t,facing,attentionPoint is {} focus?Math.Clamp((focus.X-body.X-58)/100,-1.5,1.5):cursor is {} look?Math.Clamp((look.X-body.X-58)/150,-1.5,1.5):0,teaserPawTarget,sampleTime??sequencePoseAge??clock.Elapsed.TotalSeconds-actionStarted,sequence?.Phase is BehaviorPhase.Prepare or BehaviorPhase.Crouch?NavigationPhase.Crouching:MovementPhase,sequence?.Phase);
+            feline.Pose(poseAction??body.Action,t,facing,attentionPoint is {} focus?Math.Clamp((focus.X-body.X-HalfWidth)/100,-1.5,1.5):cursor is {} look?Math.Clamp((look.X-body.X-HalfWidth)/150,-1.5,1.5):0,teaserPawTarget,sampleTime??sequencePoseAge??clock.Elapsed.TotalSeconds-actionStarted,sequence?.Phase is BehaviorPhase.Prepare or BehaviorPhase.Crouch?NavigationPhase.Crouching:MovementPhase,sequence?.Phase);
             UpdateHomeExpression();
             ToyPaw.Visibility=Visibility.Collapsed;
             Canvas.SetLeft(PettingHand,40);Canvas.SetTop(PettingHand,48+Math.Sin(t*4)*2);
         }
+        UpdateGirlLife(t);
+        // Precise existing paw-to-toy contacts keep their procedural rig until
+        // the layered artwork includes contact anchors. Ordinary poses use art.
+        var contactRig=RequiresContactRig;
+        sprite.Visibility=sprite.Ready&&!contactRig||appearance==PetAppearance.BorderCollie?Visibility.Visible:Visibility.Collapsed;
+        if(sprite.Visibility==Visibility.Visible)
+        {
+            GirlVisual.Visibility=CatVisual.Visibility=SleepingCat.Visibility=feline.Visibility=girlLife.Visibility=Visibility.Collapsed;
+            var actualPose=poseAction??body.Action;
+            if(CurrentRoomActivity is RoomActivity.Feed&&sequence?.Phase is BehaviorPhase.Work or BehaviorPhase.Pause)actualPose=BodyAction.Eat;
+            sprite.Clip=feline.Clip;
+            sprite.Pose(CharacterCapability.Pose(appearance,actualPose),t,facing,CurrentRoomActivity,sequence?.Phase);
+            if(appearance==PetAppearance.Girl)FoodBowl.Visibility=GroomComb.Visibility=PettingHand.Visibility=Pencil.Visibility=Visibility.Collapsed;
+        }
+        else if(appearance==PetAppearance.Girl)GirlVisual.Visibility=Visibility.Visible;
+    }
+
+    private void ApplyIllustratedPose(double t)
+    {
+        GirlVisual.Visibility=CatVisual.Visibility=SleepingCat.Visibility=feline.Visibility=girlLife.Visibility=Visibility.Collapsed;
+        sprite.Visibility=Visibility.Visible;
+        var actual=CharacterCapability.Pose(appearance,poseAction??body.Action);
+        if(sequence?.Kind==SequenceKind.Sleep&&sequence.Phase is BehaviorPhase.LieDown or BehaviorPhase.Curl or BehaviorPhase.Sleep)actual=BodyAction.Sleep;
+        if(CurrentRoomActivity is RoomActivity.Feed&&sequence?.Phase is BehaviorPhase.Work or BehaviorPhase.Pause)actual=BodyAction.Eat;
+        UpdateHomeExpression();sprite.Clip=feline.Clip;
+        sprite.Pose(actual,t,facing,CurrentRoomActivity,sequence?.Phase);
+        Character.Opacity=body.Action==BodyAction.Hide?.7:1;
+        ToyPaw.Visibility=Pencil.Visibility=Visibility.Collapsed;
+        FoodBowl.Visibility=appearance!=PetAppearance.Girl&&actual==BodyAction.Eat?Visibility.Visible:Visibility.Collapsed;
+        GroomComb.Visibility=appearance!=PetAppearance.Girl&&ShowComb?Visibility.Visible:Visibility.Collapsed;
+        PettingHand.Visibility=ShowHand?Visibility.Visible:Visibility.Collapsed;
+        Canvas.SetLeft(PettingHand,40);Canvas.SetTop(PettingHand,45+Math.Sin(t*4)*2);
+        Canvas.SetTop(GroomComb,67+Math.Sin(t*6)*4);
+        Affection.Visibility=body.Action is BodyAction.Nuzzle or BodyAction.Greet?Visibility.Visible:Visibility.Collapsed;
+        Canvas.SetTop(Affection,25-Math.Sin(t*2)*3);
+        SleepMark.Visibility=actual==BodyAction.Sleep?Visibility.Visible:Visibility.Collapsed;
+        SleepMark.Opacity=.5+.5*Math.Abs(Math.Sin(t));
     }
 
     private void OnPetMouseDown(object sender, MouseButtonEventArgs e)
@@ -313,12 +412,21 @@ public partial class PetWindow : Window, IAnimationController
     public void SmokeClickAt(Point point, MouseButton button)
     {
         // Synthetic routed events must not inherit the user's unrelated physical cursor location.
-        drag.WithDiagnosticPointer(new Point(Left+point.X,Top+point.Y),()=>
+        drag.WithDiagnosticPointer(new Point(body.X+point.X,body.Y+point.Y),()=>
         {
             if (InputHitTest(point) is UIElement element)
                 element.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,button) { RoutedEvent=Mouse.MouseDownEvent });
             if(InputHitTest(point) is UIElement released)released.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,button){RoutedEvent=Mouse.MouseUpEvent});
         });
+    }
+    public Point DiagnosticHitPoint()
+    {
+        UpdateLayout();
+        var frame=new System.Windows.Media.Imaging.RenderTargetBitmap(116,144,96,96,PixelFormats.Pbgra32);frame.Render(Surface);
+        var pixels=new byte[116*144*4];frame.CopyPixels(pixels,116*4,0);
+        for(var y=40;y<139;y++)for(var x=25;x<91;x++)
+            if(pixels[(y*116+x)*4+3]>120)return new Point((x+.5)*BodyWidth/116,(y+.5)*BodyHeight/144);
+        throw new InvalidOperationException("Visible character has no opaque interaction region.");
     }
     // Render only our generated vector artwork for diagnostics, never capture the desktop.
     public void RenderDiagnosticArt(string path)
@@ -327,7 +435,7 @@ public partial class PetWindow : Window, IAnimationController
         var drawing=new DrawingVisual();
         using(var context=drawing.RenderOpen())
         {
-            context.DrawRectangle(Brushes.WhiteSmoke,null,new Rect(0,0,1044,288));
+            context.DrawRectangle(Brushes.WhiteSmoke,null,new Rect(0,0,1044,144*Enum.GetValues<PetAppearance>().Length));
             var actions=new[]{BodyAction.Idle,BodyAction.Walk,BodyAction.ChaseCursor,BodyAction.Sleep,BodyAction.Stretch,BodyAction.Eat,BodyAction.Groom,BodyAction.Nuzzle,BodyAction.Greet};
             foreach(var appearance in Enum.GetValues<PetAppearance>())
             {
@@ -340,7 +448,7 @@ public partial class PetWindow : Window, IAnimationController
                 }
             }
         }
-        var sheet=new System.Windows.Media.Imaging.RenderTargetBitmap(1044,288,96,96,PixelFormats.Pbgra32);sheet.Render(drawing);
+        var sheet=new System.Windows.Media.Imaging.RenderTargetBitmap(1044,144*Enum.GetValues<PetAppearance>().Length,96,96,PixelFormats.Pbgra32);sheet.Render(drawing);
         var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(sheet));
         using var file=System.IO.File.Create(path);encoder.Save(file);
         SetAppearance(PetAppearance.Girl);SetAction(BodyAction.Idle);

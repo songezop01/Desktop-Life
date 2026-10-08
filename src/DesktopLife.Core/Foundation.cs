@@ -10,6 +10,7 @@ public sealed record AppSettings
     public BrainMode BrainMode { get; init; } = BrainMode.Utility;
     public DisplayPriority DisplayPriority { get; init; } = DisplayPriority.Medium;
     public PetAppearance PetAppearance { get; init; } = PetAppearance.Cat;
+    public PresenceMode? Presence {get;init;}
     public CloseBehavior CloseBehavior {get;init;}=CloseBehavior.Tray;
     public double AudioVolume {get;init;}=.35;
     public double CatVolume {get;init;}=1;
@@ -31,6 +32,7 @@ public sealed record AppSettings
     public void Validate()
     {
         if(new[]{AudioVolume,CatVolume,ToyVolume,AmbientVolume}.Any(v=>!double.IsFinite(v)||v<0||v>1))throw new InvalidDataException("音量必須為 0–1。");
+        if(Presence is {} mode&&!Enum.IsDefined(mode))throw new InvalidDataException("角色顯示模式無效。");
         if (!Enum.IsDefined(CloseBehavior)||!Enum.IsDefined(DisplayPriority) || !Enum.IsDefined(PetAppearance)) throw new InvalidDataException("顯示層級或外觀設定無效。");
         if (SchemaVersion != 1) throw new InvalidDataException("Unsupported settings schema.");
         if (!Enum.IsDefined(BrainMode)) throw new InvalidDataException("Invalid brain mode.");

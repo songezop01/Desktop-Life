@@ -4,13 +4,19 @@ using DesktopLife.Core;
 namespace DesktopLife.App;
 public partial class MainWindow
 {
-    public void ShowStorageNotice(string? message)=>StorageStatus.Text=message??"存檔格式 v2；自動保留三代備份，主檔損毀時找回有效備份。";
-    private void ExportPetSave(object sender,RoutedEventArgs e)
+    public void ShowStorageNotice(string? message)=>StorageStatus.Text=message??"三角色存檔 v6；自動保留三代備份，主檔損毀時找回有效備份。";
+    private async void ExportPetSave(object sender,RoutedEventArgs e)
     {
         var picker=new Microsoft.Win32.SaveFileDialog{Title="匯出寵物與房間存檔",Filter="Desktop Life 存檔 (*.json)|*.json",FileName="DesktopLife-"+DateTime.Now.ToString("yyyyMMdd")+".json"};
         if(picker.ShowDialog(this)!=true)return;
-        try{if(!SavePetState())return;organismStore.Export(picker.FileName);StorageStatus.Text="已匯出寵物、房間與設定。桌面圖示備份保持獨立。";}
-        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException){StorageStatus.Text="匯出失敗："+ex.Message;}
+        try
+        {
+            var snapshot=CapturePetSave();
+            await saveQueue.Enqueue(snapshot);
+            await Task.Run(()=>snapshot.ExportTo(picker.FileName));
+            StorageStatus.Text="已匯出寵物、房間與設定。桌面圖示備份保持獨立。";
+        }
+        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or NotSupportedException){StorageStatus.Text="匯出失敗："+ex.Message;}
     }
     private void ImportPetSave(object sender,RoutedEventArgs e)
     {

@@ -56,7 +56,7 @@ public class LocationHabitTests
             var id=Guid.NewGuid();var snapshot=new OrganismSnapshot{Pet=new(){LastSaveTime=Now}};snapshot.Learning.Room.Items.Add(new(id,FurnitureKind.Cushion,100,200));
             var node=JsonNode.Parse(JsonSerializer.Serialize(snapshot))!;node["SchemaVersion"]=2;node["Learning"]!.AsObject().Remove("LocationHabits");
             File.WriteAllText(Path.Combine(root,"organism.json"),node.ToJsonString());var store=new OrganismStore(root);var migrated=store.Load();
-            Assert.Equal(3,migrated.SchemaVersion);Assert.Empty(migrated.Learning.LocationHabits);Assert.Equal(id,Assert.Single(migrated.Learning.Room.Items).Id);
+            Assert.Equal(OrganismSnapshot.CurrentSchemaVersion,migrated.SchemaVersion);Assert.Empty(migrated.Learning.LocationHabits);Assert.Equal(id,Assert.Single(migrated.Learning.Room.Items).Id);
             var p=new RestSpotPreference();p.Attach(migrated.Learning.LocationHabits);p.Learn(id,FurnitureUse.Sleep,Now);store.Save(migrated);
             Assert.Equal(id,Assert.Single(store.Load().Learning.LocationHabits).FurnitureId);
         }finally{Directory.Delete(root,true);}

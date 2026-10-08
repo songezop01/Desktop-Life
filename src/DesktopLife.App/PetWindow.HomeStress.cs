@@ -8,21 +8,31 @@ public partial class PetWindow
     private BehaviorSequence? reportedStuck;
     public void ConfigureHomeStress()
     {
-        var b=Bounds();stressEnabled=true;Routine=new(70);
+        var b=Bounds();EnableStressRecording();Routine=new(70);
         foreach(var kind in new[]{FurnitureKind.Yarn,FurnitureKind.BellBall,FurnitureKind.ToyMouse})AddRoomItem(new(Guid.NewGuid(),kind,b.Left+100+ExtraToys.Count*90,b.Top+b.Height-40));
-        var kinds=new[]{FurnitureKind.Box,FurnitureKind.PetBed,FurnitureKind.Scratcher,FurnitureKind.CatTree,FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.Cushion};
+        var kinds=new[]{FurnitureKind.Box,FurnitureKind.PetBed,FurnitureKind.Scratcher,FurnitureKind.CatTree,FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.HumanBed,FurnitureKind.Chair,FurnitureKind.DiningTable,FurnitureKind.Computer,FurnitureKind.DrawingBook,FurnitureKind.LegoBox,FurnitureKind.Sofa,FurnitureKind.CatBowl};
         for(var i=0;i<21;i++)
         {
-            var kind=kinds[i%7];var size=RoomWindow.Size(kind);
+            var kind=kinds[i%kinds.Length];var size=RoomWindow.Size(kind);
             AddRoomItem(new(Guid.NewGuid(),kind,b.Left+30+(i%7)*(b.Width-220)/7,b.Top+b.Height-size.Height-(i/7)*125));
         }
-        ResetPosition();body.Place(b.Left+200,b.Top+b.Height-144,b);
+        ResetPosition();body.Place(b.Left+200,b.Top+b.Height-BodyHeight,b);
+    }
+    public void EnableStressRecording()
+    {
+        stressEnabled=true;
+        // Real cursor hover must not create lazy tooltip HWNDs in isolated
+        // resource measurements. Routed interaction remains covered by smoke.
+        System.Windows.Controls.ToolTipService.SetIsEnabled(Character,false);
+        foreach(var toy in AllToys)toy.DisableDiagnosticTooltip();
     }
     private void RecordStressFrame()
     {
         if(!stressEnabled||sequence is not {} s)return;
+        RecordApproachTimeout(s);
         StressPhases[s.Phase]=StressPhases.GetValueOrDefault(s.Phase)+1;
-        if(s.Phase!=BehaviorPhase.Sleep&&s.PhaseAge>35&&reportedStuck!=s){StuckSequences++;reportedStuck=s;}
+        var budget=s.Phase==BehaviorPhase.Approach?s.ApproachBudgetSeconds+3:35;
+        if(s.Phase!=BehaviorPhase.Sleep&&s.PhaseAge>budget&&reportedStuck!=s){StuckSequences++;reportedStuck=s;}
     }
     public void StressSceneStep(int second)
     {

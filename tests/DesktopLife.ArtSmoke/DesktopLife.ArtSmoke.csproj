@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/DesktopLife.Core/DesktopLife.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/DesktopLife.App/CharacterGeometry.cs" Link="CharacterGeometry.cs" />
+    <Compile Include="../../src/DesktopLife.App/SpriteAssetReader.cs" Link="SpriteAssetReader.cs" />
+    <Compile Include="../../src/DesktopLife.App/CompanionWalkAtlas.cs" Link="CompanionWalkAtlas.cs" />
+    <Compile Include="../../src/DesktopLife.App/CompanionTransitionAtlas.cs" Link="CompanionTransitionAtlas.cs" />
+    <Compile Include="../../src/DesktopLife.App/IllustrationAnimationChecks.cs" Link="IllustrationAnimationChecks.cs" />
+    <Compile Include="../../src/DesktopLife.App/CompanionSpriteVisual.cs" Link="CompanionSpriteVisual.cs" />
+    <Compile Include="../../src/DesktopLife.App/FurnitureArt.cs" Link="FurnitureArt.cs" />
+    <Resource Include="../../src/DesktopLife.App/Assets/Companions/*.png" Link="Assets/Companions/%(Filename)%(Extension)" />
+    <Resource Include="../../src/DesktopLife.App/Assets/Companions/*manifest.json" Link="Assets/Companions/%(Filename)%(Extension)" />
+    <Resource Include="../../src/DesktopLife.App/Assets/Furniture/*.png" Link="Assets/Furniture/%(Filename)%(Extension)" />
+    <Resource Include="../../src/DesktopLife.App/Assets/Furniture/furniture-manifest.json" Link="Assets/Furniture/furniture-manifest.json" />
+  </ItemGroup>
+</Project>

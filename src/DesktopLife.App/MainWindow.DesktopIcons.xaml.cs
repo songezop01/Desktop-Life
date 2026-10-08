@@ -42,12 +42,12 @@ public partial class MainWindow
     }
     private async Task ReadShortcuts()
     {
-        if(desktopIcons is null||iconBusy||iconClosing||!settings.DesktopIconsEnabled)return;
+        if(desktopIcons is null||iconBusy||iconClosing||saveClosing||!settings.DesktopIconsEnabled)return;
         iconBusy=true;
         try
         {
             var layout=await desktopIcons.Run(s=>s.Read());
-            if(!settings.DesktopIconsEnabled||iconClosing)return;
+            if(!settings.DesktopIconsEnabled||iconClosing||saveClosing)return;
             iconLayout=layout;
             var work=DisplayWorkspace.Bounds;
             Pet.Shortcuts=layout.Icons.Where(i=>i.Shortcut).Select(i=>
@@ -62,11 +62,11 @@ public partial class MainWindow
     }
     private async void MoveShortcut(string id,double x,double y)
     {
-        if(desktopIcons is null||iconLayout is null||iconBusy||iconClosing||!settings.DesktopIconsEnabled)return;
+        if(desktopIcons is null||iconLayout is null||iconBusy||iconClosing||saveClosing||!settings.DesktopIconsEnabled)return;
         iconBusy=true;var feedback="";
         try
         {
-            var physical=Pet.PointToScreen(new Point(x-Pet.Left,y-Pet.Top));
+            var physical=DisplayWorkspace.ToPixels(new Point(x,y));
             var px=(int)Math.Round(physical.X-iconLayout.OriginX);var py=(int)Math.Round(physical.Y-iconLayout.OriginY);
             await desktopIcons.Run(s=>{s.MoveShortcut(id,px,py);return true;});
             feedback="已移動快捷圖示；原始排列已備份，可隨時恢復。";

@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "sourceWidth": 1448,
+  "sourceHeight": 1086,
+  "coordinates": "source pixel rectangles; frame order explicit, alpha trims only transparent border",
+  "clips": [
+    {
+      "character": "Girl",
+      "sheet": "girl-walk-v2.png",
+      "referenceHeight": 550,
+      "durationSeconds": 0.1,
+      "strideDip": 34,
+      "frames": [
+        [
+          25,
+          0,
+          382,
+          552
+        ],
+        [
+          408,
+          0,
+          310,
+          552
+        ],
+        [
+          720,
+          0,
+          365,
+          552
+        ],
+        [
+          1085,
+          0,
+          363,
+          552
+        ],
+        [
+          25,
+          550,
+          382,
+          536
+        ],
+        [
+          408,
+          550,
+          310,
+          536
+        ],
+        [
+          720,
+          550,
+          365,
+          536
+        ],
+        [
+          1085,
+          550,
+          363,
+          536
+        ]
+      ]
+    },
+    {
+      "character": "BorderCollie",
+      "sheet": "border-collie-walk-v2.png",
+      "referenceHeight": 345,
+      "durationSeconds": 0.09,
+      "strideDip": 44,
+      "frames": [
+        [
+          0,
+          165,
+          393,
+          380
+        ],
+        [
+          377,
+          165,
+          365,
+          380
+        ],
+        [
+          738,
+          165,
+          354,
+          380
+        ],
+        [
+          1090,
+          165,
+          358,
+          380
+        ],
+        [
+          0,
+          578,
+          393,
+          420
+        ],
+        [
+          377,
+          578,
+          365,
+          420
+        ],
+        [
+          738,
+          578,
+          354,
+          420
+        ],
+        [
+          1090,
+          578,
+          358,
+          420
+        ]
+      ]
+    },
+    {
+      "character": "Cat",
+      "sheet": "orange-cat-walk-v2.png",
+      "referenceHeight": 340,
+      "durationSeconds": 0.09,
+      "strideDip": 40,
+      "frames": [
+        [
+          0,
+          120,
+          388,
+          414
+        ],
+        [
+          378,
+          120,
+          362,
+          414
+        ],
+        [
+          737,
+          120,
+          360,
+          414
+        ],
+        [
+          1091,
+          120,
+          357,
+          414
+        ],
+        [
+          0,
+          565,
+          388,
+          433
+        ],
+        [
+          378,
+          565,
+          362,
+          433
+        ],
+        [
+          737,
+          565,
+          360,
+          433
+        ],
+        [
+          1091,
+          565,
+          357,
+          433
+        ]
+      ]
+    }
+  ]
+}

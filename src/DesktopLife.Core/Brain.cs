@@ -1,4 +1,4 @@
-namespace DesktopLife.Core;
+﻿namespace DesktopLife.Core;
 
 public enum BehaviorDrive { Approach, Explore, Avoid, Rest, Create, Play, Interact }
 public sealed record PersonalityProfile
@@ -18,7 +18,7 @@ public sealed record PersonalityProfile
     }
 }
 public sealed record EnvironmentContext(PetState Pet, PersonalityProfile Personality, EnvironmentState? Environment,
-    LearningContext LearningContext, bool Fullscreen = false, Affordances? Affordances = null);
+    LearningContext LearningContext, bool Fullscreen = false, Affordances? Affordances = null, PetAppearance Appearance = PetAppearance.Girl, DateTimeOffset? Now = null, double Bond = 15);
 public sealed record BrainOutput(IReadOnlyDictionary<BehaviorDrive,double> Scores, double[] Activity, double[] Outputs)
 {
     public double Score(BehaviorDrive drive) => Scores.TryGetValue(drive,out var score) && double.IsFinite(score) ? Math.Clamp(score,0,1) : 0;
@@ -68,7 +68,7 @@ public sealed class PetAction(BodyAction id) : IPetAction
     public double FinalScore => BaseUtility+NeuralBias+LearnedBias;
     public double ElapsedSeconds { get; private set; }
     public bool Running { get; private set; }
-    public bool CanExecute(EnvironmentContext context) => Id is not (BodyAction.Eat or BodyAction.Fall or BodyAction.BatToy) && !context.Fullscreen && AffordanceProvider.Allows(Id,context.Affordances??new(false,false,false,false));
+    public bool CanExecute(EnvironmentContext context) => CharacterCapability.Allows(context.Appearance,Id) && Id is not (BodyAction.Eat or BodyAction.Fall or BodyAction.BatToy) && !context.Fullscreen && AffordanceProvider.Allows(Id,context.Affordances??new(false,false,false,false));
     public double EvaluateUtility(EnvironmentContext context)
     {
         var p=context.Pet;
@@ -95,7 +95,11 @@ public sealed class PetAction(BodyAction id) : IPetAction
     {
         EvaluateUtility(context);
         NeuralBias=.3*brain.Score(Drive(Id));
-        LearnedBias=.35*learning.Bias(Id,context.LearningContext);
+        LearnedBias=.35*learning.Bias(Id,context.LearningContext)+learning.State.Transitions.Bias(Id,context.Now??DateTimeOffset.UtcNow)
+            +HomeRoutine.TransitionTendency(learning.State.Transitions.Previous,Id,context.Personality,context.Bond);
+        var p=context.Personality;
+        BaseUtility+=BehaviorTransitionPreference.Classify(Id) switch
+        {LifeBehavior.Explore=>.35*(p.Curiosity-.5)+.10*p.Independence,LifeBehavior.Play=>.45*(p.Playfulness-.5),LifeBehavior.Social=>.40*(p.Social-.5)-.12*p.Independence,LifeBehavior.Rest=>.3*(p.Laziness-.5),_=>0};
     }
     public static BehaviorDrive Drive(BodyAction action) => action switch
     { BodyAction.Sleep or BodyAction.Sit or BodyAction.RestInCorner=>BehaviorDrive.Rest,
@@ -119,7 +123,7 @@ public sealed class ActionSelection(int seed = 42)
         foreach(var a in actions)a.Score(context,brain,learning);
         if(actions.Length==0)return [];
         var maximum=actions.Max(a=>a.FinalScore);
-        var weights=actions.Select(a=>Math.Exp((a.FinalScore-maximum)/.25)/(1+.25*learning.State.Variation.RecentOutputHistory.TakeLast(8).Count(e=>e.Action==a.Id && DateTimeOffset.UtcNow-e.CreatedAt<TimeSpan.FromMinutes(5)))).ToArray();var sum=weights.Sum();
+        var weights=actions.Select(a=>Math.Exp((a.FinalScore-maximum)/.25)/(1+.25*learning.State.Variation.RecentOutputHistory.TakeLast(8).Count(e=>e.Action==a.Id && (context.Now??DateTimeOffset.UtcNow)-e.CreatedAt<TimeSpan.FromMinutes(5)))).ToArray();var sum=weights.Sum();
         return actions.Select((a,i)=>new ActionScore(a.Id,a.BaseUtility,a.NeuralBias,a.LearnedBias,a.FinalScore,weights[i]/sum)).ToArray();
     }
     public ActionDecision Select(EnvironmentContext context,BrainOutput brain,RewardLearning learning,BodyAction current,bool hold)
@@ -128,7 +132,7 @@ public sealed class ActionSelection(int seed = 42)
         var scores=Evaluate(context,brain,learning);
         if(context.Pet.Energy<=10 || context.Pet.Fatigue>=95)return new(BodyAction.Sleep,"生理安全：優先休息",scores);
         if(current==BodyAction.Sleep && (context.Pet.Energy<30 || context.Pet.Fatigue>75))return new(BodyAction.Sleep,"恢復中：避免反覆切換",scores);
-        if(hold)return new(current,"完成目前動作",scores);
+        if(hold)return new(CharacterCapability.Resolve(context.Appearance,current),"完成目前動作",scores);
         var sample=random.NextDouble();
         foreach(var score in scores){sample-=score.Probability;if(sample<=0)return new(score.Action,"效用與偏好取樣",scores);}
         return new(BodyAction.Idle,"安全備援",scores);

@@ -1,4 +1,4 @@
-namespace DesktopLife.Core;
+﻿namespace DesktopLife.Core;
 
 public sealed record GeneratedDrawing(DoodlePoint[][] Strokes,double Width,double Height,double StrokeWidth,int ColorIndex)
 {
@@ -56,6 +56,14 @@ public static class ProceduralDrawing
 public sealed record ComposedNote(string Text,string Signature);
 public static class ComposableText
 {
+    public static ComposedNote GenerateGirl(BehaviorParameters parameters,BehaviorVariationState memory)
+    {
+        parameters.Validate();var r=new Random(parameters.Seed);
+        string[][] phrases=[ ["今天心情不錯。","想畫一朵小花。","待在這裡很舒服。"], ["想找點小事做。","畫顆星星好了。","想換個地方坐坐。"], ["想在你旁邊坐一會兒。","陪你安靜待一下。","有點想找你玩。"], ["現在精神很好！","想畫一張小畫。","一起看看桌上的小東西吧。"], ["先在這裡看一看。","慢慢來就好。","有點不好意思呢。"], ["想安靜休息一下。","今天畫簡單一點。","慢慢來，不著急。"] ];
+        ComposedNote note=new("","girl-note");
+        for(var i=0;i<16;i++){var text=phrases[(int)parameters.Write.Emotion][r.Next(3)];note=new(text,"girl-note:"+text);if(!memory.RecentOutputHistory.TakeLast(4).Any(h=>h.Signature==note.Signature))break;}return note;
+    }
+
     private static readonly string[][] Emotions=[
         ["心裡暖暖的","有一點開心","感覺輕飄飄的","忍不住微笑"],
         ["有一點無聊","想找點新鮮事","快要發芽了","有點坐不住"],

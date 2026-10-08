@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "sheet": "furniture-v1.png",
+  "coordinates": "absolute source pixels; support before world scene scaling",
+  "furniture": [
+    {
+      "kind": "CatTree",
+      "rect": [
+        0,
+        0,
+        296,
+        412
+      ],
+      "supports": [
+        [
+          45,
+          170,
+          73,
+          73
+        ],
+        [
+          99,
+          194,
+          223,
+          223
+        ]
+      ],
+      "foreground": 223
+    },
+    {
+      "kind": "Slide",
+      "rect": [
+        298,
+        128,
+        286,
+        284
+      ],
+      "supports": [
+        [
+          472,
+          65,
+          202,
+          202
+        ],
+        [
+          311,
+          170,
+          368,
+          202
+        ]
+      ],
+      "foreground": 395
+    },
+    {
+      "kind": "Desk",
+      "rect": [
+        591,
+        158,
+        311,
+        254
+      ],
+      "supports": [
+        [
+          602,
+          285,
+          189,
+          189
+        ]
+      ],
+      "foreground": 213
+    },
+    {
+      "kind": "Bookshelf",
+      "rect": [
+        904,
+        26,
+        208,
+        386
+      ],
+      "supports": [
+        [
+          923,
+          179,
+          80,
+          80
+        ],
+        [
+          934,
+          165,
+          170,
+          170
+        ],
+        [
+          934,
+          165,
+          300,
+          300
+        ]
+      ],
+      "foreground": 361
+    },
+    {
+      "kind": "HumanBed",
+      "sheet": "rest-v1.png",
+      "rect": [
+        0,
+        0,
+        1536,
+        531
+      ],
+      "supports": [
+        [
+          170,
+          1220,
+          304,
+          304
+        ]
+      ],
+      "foreground": 387
+    },
+    {
+      "kind": "Sofa",
+      "sheet": "rest-v1.png",
+      "rect": [
+        0,
+        531,
+        1536,
+        493
+      ],
+      "supports": [
+        [
+          210,
+          1130,
+          756,
+          756
+        ]
+      ],
+      "foreground": 805
+    },
+    {
+      "kind": "Chair",
+      "rect": [
+        349,
+        416,
+        190,
+        265
+      ],
+      "supports": [
+        [
+          374,
+          133,
+          550,
+          550
+        ]
+      ],
+      "foreground": 577
+    },
+    {
+      "kind": "DiningTable",
+      "rect": [
+        544,
+        466,
+        370,
+        215
+      ],
+      "supports": [
+        [
+          566,
+          330,
+          495,
+          495
+        ]
+      ],
+      "foreground": 536
+    },
+    {
+      "kind": "Computer",
+      "rect": [
+        920,
+        436,
+        247,
+        248
+      ],
+      "supports": []
+    },
+    {
+      "kind": "DrawingBook",
+      "rect": [
+        1169,
+        480,
+        279,
+        198
+      ],
+      "supports": []
+    },
+    {
+      "kind": "LegoBox",
+      "rect": [
+        0,
+        686,
+        296,
+        210
+      ],
+      "supports": []
+    },
+    {
+      "kind": "CatBowl",
+      "rect": [
+        333,
+        724,
+        209,
+        170
+      ],
+      "supports": []
+    },
+    {
+      "kind": "PetBed",
+      "rect": [
+        548,
+        688,
+        331,
+        208
+      ],
+      "supports": [
+        [
+          601,
+          223,
+          800,
+          800
+        ]
+      ],
+      "foreground": 826
+    },
+    {
+      "kind": "Scratcher",
+      "rect": [
+        885,
+        728,
+        275,
+        168
+      ],
+      "supports": [
+        [
+          932,
+          164,
+          788,
+          788
+        ]
+      ],
+      "foreground": 820
+    },
+    {
+      "kind": "Box",
+      "rect": [
+        1162,
+        678,
+        286,
+        218
+      ],
+      "supports": [
+        [
+          1190,
+          205,
+          887,
+          887
+        ]
+      ],
+      "foreground": 780
+    },
+    {
+      "kind": "Cushion",
+      "rect": [
+        0,
+        895,
+        328,
+        191
+      ],
+      "supports": [
+        [
+          57,
+          211,
+          953,
+          953
+        ]
+      ],
+      "foreground": 1000
+    },
+    {
+      "kind": "Yarn",
+      "rect": [
+        352,
+        901,
+        275,
+        185
+      ],
+      "supports": []
+    },
+    {
+      "kind": "BellBall",
+      "rect": [
+        649,
+        899,
+        185,
+        187
+      ],
+      "supports": []
+    },
+    {
+      "kind": "ToyMouse",
+      "rect": [
+        882,
+        900,
+        300,
+        186
+      ],
+      "supports": []
+    }
+  ]
+}

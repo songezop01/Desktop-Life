@@ -7,7 +7,7 @@ public class HomeAffordanceTests
     [InlineData(FurnitureKind.Box,FurnitureUse.Hide|FurnitureUse.Rest|FurnitureUse.Play)]
     [InlineData(FurnitureKind.Scratcher,FurnitureUse.Scratch|FurnitureUse.Stretch)]
     [InlineData(FurnitureKind.PetBed,FurnitureUse.Rest|FurnitureUse.Sleep|FurnitureUse.Social)]
-    [InlineData(FurnitureKind.Desk,FurnitureUse.Platform|FurnitureUse.Observe)]
+    [InlineData(FurnitureKind.Desk,FurnitureUse.Platform|FurnitureUse.Observe|FurnitureUse.Rest|FurnitureUse.Eat|FurnitureUse.HairCare|FurnitureUse.Draw|FurnitureUse.Write|FurnitureUse.Read|FurnitureUse.Build)]
     [InlineData(FurnitureKind.CatTree,FurnitureUse.Platform|FurnitureUse.Observe|FurnitureUse.Rest|FurnitureUse.Play)]
     public void SemanticMapping(FurnitureKind kind,FurnitureUse uses)=>Assert.Equal(uses,FurnitureAffordance.For(kind));
     [Fact] public void MovingFurnitureDoesNotOfferStableTargets()

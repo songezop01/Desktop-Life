@@ -1,10 +1,10 @@
 # Windows 獨立程式
 
-Desktop Life 0.5 使用 Windows x64 的單一 EXE，內含 .NET 執行環境。雙擊 `DesktopLife.exe` 或桌面「Desktop Life 桌面寵物」捷徑即可執行，不需要開啟 Codex、CMD、PowerShell 或另外安裝 .NET。
+Desktop Life 0.11 使用 Windows x64 的單一 EXE，內含 .NET 執行環境。雙擊 `DesktopLife.exe` 或桌面「Desktop Life 桌面寵物」捷徑即可執行，不需要開啟 Codex、CMD、PowerShell 或另外安裝 .NET。
 
-開發者執行 `scripts/publish.ps1` 會建立新的 `artifacts/standalone/0.5.0-日期時間/DesktopLife.exe` 與 ZIP。每次發行使用不同資料夾，不覆蓋正在執行的版本。`scripts/install.ps1` 將檔案放入 `%LOCALAPPDATA%/Programs/DesktopLife`，建立桌面與開始功能表捷徑；加上 `-Launch` 可透過 Windows 系統服務啟動獨立程序。
+開發者執行 `scripts/publish.ps1` 會建立新的 `artifacts/standalone/0.11.0-日期時間/DesktopLife.exe` 與 ZIP。每次發行使用不同資料夾，不覆蓋正在執行的版本。既有使用者的 0.11 升級使用 `scripts/upgrade-011.ps1 -VerificationDirectory <同份來源的 Full 執行目錄>`，依序核對測試與來源、封裝檢查、安全退出、資料備份及捷徑更新。`scripts/install.ps1` 是底層檔案安裝工具，不能替代這些升級步驟。
 
-寵物記憶、房間與桌面圖示備份仍保存在 `%LOCALAPPDATA%/DesktopLife`。更新程式不會刪除這些資料。第一次從舊版更新時，先在右下角托盤選單按「結束」，讓舊版完成保存與圖示恢復，再開啟新版。
+寵物記憶、房間與桌面圖示備份仍保存在 `%LOCALAPPDATA%/DesktopLife`。0.11 的資料格式升至 schema7，加入一至三層小屋配置；升級保留角色歷史及家具 ID。回復 0.10.1 時必須配合當次升級前的 schema6 備份，請使用 `artifacts/recovery/0.11.0-<時間>/Restore previous Desktop Life.cmd`，不能只替換 EXE。
 
 新版重複啟動會開啟現有控制台。控制台的關閉偏好可即時選擇「進入托盤」或「結束程式」。維護工具可執行 `DesktopLife.exe --shutdown`，透過限目前 Windows 使用者的本機通道要求程式保存、恢復圖示並結束；成功回傳 0，不能安全結束時回傳 2，不會強制終止程式。
 

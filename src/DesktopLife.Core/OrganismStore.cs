@@ -3,15 +3,35 @@ using System.Text.Json.Serialization;
 namespace DesktopLife.Core;
 public sealed record OrganismSnapshot
 {
-    [JsonRequired] public int SchemaVersion { get; init; } = 3;
+    // Older readers reject schema seven before discarding fixed house floors.
+    public const int CurrentSchemaVersion = 7;
+    [JsonRequired] public int SchemaVersion { get; init; } = CurrentSchemaVersion;
+    public CharacterProfile? OtherCharacter {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public CharacterProfile? AdditionalCharacter {get;init;}
+    public RoomPoint? PrimaryPosition {get;init;}
     [JsonRequired] public PetSnapshot Pet { get; init; } = new();
     [JsonRequired] public LearningState Learning { get; init; } = new();
     [JsonRequired] public PersonalityProfile Personality { get; init; } = new();
     [JsonRequired] public AppSettings Settings { get; init; } = new();
     public void Validate()
     {
-        if(SchemaVersion!=3||Pet is null||Learning is null||Personality is null||Settings is null)throw new InvalidDataException("Unknown organism schema or missing data.");
+        if(SchemaVersion!=CurrentSchemaVersion||Pet is null||Learning is null||Personality is null||Settings is null)throw new InvalidDataException("Unknown organism schema or missing data.");
         Pet.Validate();Learning.Validate();Personality.Validate();Settings.Validate();
+        OtherCharacter?.Validate();
+        AdditionalCharacter?.Validate();
+        if(OtherCharacter?.Kind==Settings.PetAppearance||AdditionalCharacter?.Kind==Settings.PetAppearance||
+            OtherCharacter is not null&&AdditionalCharacter?.Kind==OtherCharacter.Kind)
+            throw new InvalidDataException("角色不可使用相同身分。");
+        if(PrimaryPosition is {} p&&(!double.IsFinite(p.X)||!double.IsFinite(p.Y)))throw new InvalidDataException("角色位置無效。");
+    }
+
+    public CharacterProfile? GetCharacter(PetAppearance kind)
+    {
+        if(!Enum.IsDefined(kind))throw new ArgumentOutOfRangeException(nameof(kind));
+        if(Settings.PetAppearance==kind)return new(){Kind=kind,Pet=Pet,Learning=Learning,Personality=Personality,Position=PrimaryPosition};
+        if(OtherCharacter?.Kind==kind)return OtherCharacter;
+        return AdditionalCharacter?.Kind==kind?AdditionalCharacter:null;
     }
 }
 public sealed class OrganismStore(string directory)
@@ -25,11 +45,11 @@ public sealed class OrganismStore(string directory)
         using(var document=JsonDocument.Parse(json))
         {
             if(document.RootElement.ValueKind!=JsonValueKind.Object)throw new InvalidDataException("存檔格式無效。");
-            if(document.RootElement.TryGetProperty("SchemaVersion",out var version)&&version.ValueKind==JsonValueKind.Number&&version.TryGetInt32(out var number)&&number>3)
+            if(document.RootElement.TryGetProperty("SchemaVersion",out var version)&&version.ValueKind==JsonValueKind.Number&&version.TryGetInt32(out var number)&&number>OrganismSnapshot.CurrentSchemaVersion)
                 throw new NotSupportedException("存檔來自較新的程式版本，請更新程式；原檔未被修改。");
         }
         var value=JsonSerializer.Deserialize<OrganismSnapshot>(json)??throw new InvalidDataException("存檔內容為空。");
-        if(value.SchemaVersion==2)value=value with{SchemaVersion=3};
+        if(value.SchemaVersion is 2 or 3 or 4 or 5 or 6)value=value with{SchemaVersion=OrganismSnapshot.CurrentSchemaVersion};
         value.Validate();return value;
     }
     private static bool Damaged(Exception ex)=>ex is JsonException or InvalidDataException or ArgumentException;
@@ -93,6 +113,8 @@ public sealed class OrganismStore(string directory)
         }
         finally{if(File.Exists(temporary))File.Delete(temporary);}
     }
+    public static void WriteSnapshot(OrganismSnapshot snapshot,string destination)
+    {snapshot.Validate();WriteAtomic(snapshot,destination);}
     public void Export(string destination)=>WriteAtomic(Load(),destination);
     public void StageImport(string source)=>WriteAtomic(Read(source),Path.Combine(directory,"organism.import.json"));
     public bool ApplyPendingImport()

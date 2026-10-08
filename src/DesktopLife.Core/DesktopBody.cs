@@ -10,10 +10,18 @@ public sealed class DesktopBody
     public double Direction { get; private set; } = 1;
     public const double Width = 116;
     public const double Height = 144;
+    public double BodyWidth { get; private set; } = Width;
+    public double BodyHeight { get; private set; } = Height;
+    public void Resize(double width,double height,BodyBounds bounds)
+    {
+        if(!double.IsFinite(width)||!double.IsFinite(height)||width<=0||height<=0)throw new ArgumentOutOfRangeException(nameof(width));
+        var center=X+BodyWidth/2;var feet=Y+BodyHeight;
+        BodyWidth=width;BodyHeight=height;X=center-width/2;Y=feet-height;Clamp(bounds);
+    }
     public void Reset(BodyBounds bounds)
     {
-        X = bounds.Left + (bounds.Width - Width) / 2;
-        Y = bounds.Top + bounds.Height - Height - 24;
+        X = bounds.Left + (bounds.Width - BodyWidth) / 2;
+        Y = bounds.Top + bounds.Height - BodyHeight - 24;
         Clamp(bounds);
     }
     public void Update(double seconds, BodyBounds bounds)
@@ -23,7 +31,7 @@ public sealed class DesktopBody
         if (Action is BodyAction.Walk or BodyAction.Wander)
         {
             X += Direction * (Action == BodyAction.Walk ? 60 : 35) * seconds;
-            if (X <= bounds.Left || X >= bounds.Left + Math.Max(0, bounds.Width - Width)) Direction *= -1;
+            if (X <= bounds.Left || X >= bounds.Left + Math.Max(0, bounds.Width - BodyWidth)) Direction *= -1;
         }
         Clamp(bounds);
     }
@@ -41,7 +49,7 @@ public sealed class DesktopBody
     }
     private void Clamp(BodyBounds bounds)
     {
-        X = Math.Clamp(X, bounds.Left, bounds.Left + Math.Max(0, bounds.Width - Width));
-        Y = Math.Clamp(Y, bounds.Top, bounds.Top + Math.Max(0, bounds.Height - Height));
+        X = Math.Clamp(X, bounds.Left, bounds.Left + Math.Max(0, bounds.Width - BodyWidth));
+        Y = Math.Clamp(Y, bounds.Top, bounds.Top + Math.Max(0, bounds.Height - BodyHeight));
     }
 }

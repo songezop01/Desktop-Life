@@ -9,12 +9,14 @@ namespace DesktopLife.App;
 
 public sealed class ToyWindow : Window
 {
+    internal void DisableDiagnosticTooltip()=>System.Windows.Controls.ToolTipService.SetIsEnabled(shape,false);
     // HWND bounds must contain the rotated and held square, not only its collision body.
     public const double VisualPadding=12;
     private readonly Canvas artwork=new(){Width=40,Height=40,Background=null,ClipToBounds=false};
     public RoomItem? RoomItem {get;set;}
     public IReadOnlyList<RoomPlatform> Platforms {get;set;}=[];
     public InteractiveToy Model {get;}
+    public BodyBounds? RoomBounds {get;set;}
     public event Action<double>? Rang;
     private double ringingTime;
     public event Action? Played;
@@ -27,7 +29,15 @@ public sealed class ToyWindow : Window
         if(kind==FurnitureKind.ToyMouse)
         {artwork.Children.Add(new Path{Data=Geometry.Parse("M 5,9 Q 1,0 11,3 M 29,3 Q 39,0 34,11 M 10,22 L 11,22 M 27,22 L 28,22 M 18,29 L 22,29"),Stroke=Brushes.LightPink,StrokeThickness=4,IsHitTestVisible=false});}
         if(kind==FurnitureKind.BellBall)artwork.Children.Add(new Path{Data=Geometry.Parse("M 20,9 L 20,25 M 14,26 Q 20,33 26,26"),Stroke=Brushes.SaddleBrown,StrokeThickness=3,IsHitTestVisible=false});
+        ApplyIllustratedToy(kind);
         var menu=new ContextMenu();var item=new MenuItem{Header="收起這件玩具"};item.Click+=(_,_)=>RemoveRequested?.Invoke();menu.Items.Add(item);shape.ContextMenu=menu;
+    }
+    private void ApplyIllustratedToy(FurnitureKind kind)
+    {
+        if(FurnitureArt.LoadedCount==0)return;
+        artwork.Children.Clear();if(shape is Shape collider){collider.Fill=Brushes.Transparent;collider.Stroke=null;}
+        artwork.Children.Add(shape);
+        artwork.Children.Add(new FurnitureSpriteVisual(kind,40,40){IsHitTestVisible=false});
     }
     private readonly FrameworkElement shape;
     private readonly RotateTransform rotation=new();
@@ -45,6 +55,7 @@ public sealed class ToyWindow : Window
         shape=ball?new Ellipse{Width=38,Height=38,Fill=Brushes.Coral,Stroke=Brushes.OrangeRed,StrokeThickness=2}
             :new Rectangle{Width=36,Height=36,Fill=Brushes.MediumPurple,Stroke=Brushes.Lavender,StrokeThickness=3,RadiusX=3,RadiusY=3};
         Canvas.SetLeft(shape,ball?1:2);Canvas.SetTop(shape,ball?1:2);artwork.Children.Add(shape);
+        ApplyIllustratedToy(ball?FurnitureKind.BellBall:FurnitureKind.LegoBox);
         var transforms=new TransformGroup();transforms.Children.Add(scale);transforms.Children.Add(rotation);
         artwork.RenderTransformOrigin=new Point(.5,.5);artwork.RenderTransform=transforms;
         shape.ToolTip=ball?"拖曳圓球；輕點可彈動，桌寵會追球。":"拖曳玩具方塊；這不是 Windows 快捷圖示。";
@@ -58,7 +69,7 @@ public sealed class ToyWindow : Window
     {
         void Click(double x)
         {
-            drag.WithDiagnosticPointer(new Point(Left+VisualPadding+x,Top+VisualPadding+20),()=>
+            drag.WithDiagnosticPointer(new Point(Model.X+x,Model.Y+20),()=>
             {
                 shape.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,Environment.TickCount,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.MouseDownEvent});
                 shape.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,Environment.TickCount,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.MouseUpEvent});
@@ -67,7 +78,7 @@ public sealed class ToyWindow : Window
         Click(5);if(Model.VelocityX<=0)throw new Exception("Left contact did not propel toy right.");
         Click(35);if(Model.VelocityX>=0)throw new Exception("Right contact did not propel toy left.");
     }
-    private static BodyBounds Bounds()=>DisplayWorkspace.Bounds;
+    private BodyBounds Bounds()=>RoomBounds??DisplayWorkspace.Bounds;
     public void SmokeRotatedBounds(string path)
     {
         var saved=rotation.Angle;

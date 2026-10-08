@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 namespace DesktopLife.Core;
 
 public enum ActionCategory { Basic, Explore, Social, Create, Play, Rest, Mischief }
@@ -70,6 +70,9 @@ public sealed class LearningState
     public long PositiveRewards { get; set; }
     public long Punishments { get; set; }
     [JsonConverter(typeof(LocationHabitListConverter))] public List<LocationHabit> LocationHabits {get;set;}=[];
+    [JsonConverter(typeof(PersonalityAdaptationConverter))] public PersonalityAdaptation Adaptation {get;set;}=new();
+    [JsonConverter(typeof(TransitionPreferenceConverter))] public BehaviorTransitionPreference Transitions {get;set;}=new();
+    [JsonConverter(typeof(MilestoneMemoryConverter))] public MilestoneMemory Milestones {get;set;}=new();
     public RoomState Room {get;set;}=new();
     public CompanionState Companion {get;set;}=new();
     public BehaviorVariationState Variation {get;set;}=new();
@@ -77,6 +80,9 @@ public sealed class LearningState
     {
         if(Variation is null)throw new InvalidDataException("缺少行為風格狀態。");
         Variation.Validate();
+        Milestones??=new();Milestones.Sanitize();
+        Transitions??=new();Transitions.Sanitize();
+        Adaptation??=new();Adaptation.Sanitize();
         LocationHabits??=[];var habits=new RestSpotPreference();habits.Attach(LocationHabits);
         if(Companion is null)throw new InvalidDataException("缺少陪伴資料。");
         Companion.Validate();

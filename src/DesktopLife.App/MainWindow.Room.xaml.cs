@@ -4,22 +4,27 @@ namespace DesktopLife.App;
 public partial class MainWindow
 {
     private void ForgetFurnitureHabits(object sender,RoutedEventArgs e)
-    {Pet.ForgetHabits();SavePetState();RoomStatus.Text="已忘記家具習慣；名字、關係、回憶和房間佈置皆保留。";}
+    {CharacterWindow(careTarget).ForgetHabits();QueuePetSave();RoomStatus.Text="已忘記目前角色的家具習慣；另一角色與房間佈置皆保留。";}
     private void InitializeRoom()
     {
         FurnitureOptions.ItemsSource=Enum.GetValues<FurnitureKind>();FurnitureOptions.SelectedIndex=0;
-        Pet.RoomChanged+=()=>{SavePetState();UpdatePetVisibility();ShowRoomStatus();};ShowRoomStatus();
+        InitializeHouseMenu();
+        Pet.RoomChanged+=()=>{QueuePetSave();UpdatePetVisibility();ShowRoomStatus();};ShowRoomStatus();
     }
     private void AddFurniture(object sender,RoutedEventArgs e)
     {
         if(FurnitureOptions.SelectedItem is not FurnitureKind kind)return;
         if(Pet.Furniture.Count+Pet.ExtraToys.Count>=24){RoomStatus.Text="房間最多放置 24 件，請先收起一件。";return;}
-        var bounds=DisplayWorkspace.Bounds;var size=RoomWindow.Size(kind);var offset=(Pet.Furniture.Count+Pet.ExtraToys.Count)%6*110;
-        Pet.AddRoomItem(new(Guid.NewGuid(),kind,bounds.Left+60+offset,bounds.Top+bounds.Height-(kind is FurnitureKind.Yarn or FurnitureKind.BellBall or FurnitureKind.ToyMouse?160:size.Height)));
-        EditRoom.IsChecked=true;Pet.SetRoomEditing(true);SavePetState();UpdatePetVisibility();ShowRoomStatus();
+        var bounds=DisplayWorkspace.Bounds;var size=RoomWindow.Size(kind);var h=Pet.House!;
+        var floor=h.Floors.OrderBy(f=>Pet.Furniture.Count(w=>w.Item.FloorIndex==f.Index)).First();
+        var offset=Pet.Furniture.Count(w=>w.Item.FloorIndex==floor.Index)%4*150*h.SceneScale;
+        var toy=kind is FurnitureKind.Yarn or FurnitureKind.BellBall or FurnitureKind.ToyMouse;
+        var width=toy?40:size.Width*h.SceneScale;var height=toy?40:size.Height*h.SceneScale;
+        Pet.AddRoomItem(new(Guid.NewGuid(),kind,Math.Clamp(floor.Left+30*h.SceneScale+offset,bounds.Left,bounds.Left+Math.Max(0,bounds.Width-width)),floor.Y-height,floor.Index));
+        EditRoom.IsChecked=true;Pet.SetRoomEditing(true);QueuePetSave();UpdatePetVisibility();ShowRoomStatus();
     }
     private void EditRoomChanged(object sender,RoutedEventArgs e)
-    {if(Learning is null)return;Pet.SetRoomEditing(EditRoom.IsChecked==true);ShowRoomStatus();}
+    {if(Learning is null)return;Pet.SetRoomEditing(EditRoom.IsChecked==true);foreach(var c in secondaryCharacters)c.Window.SetRoomEditing(EditRoom.IsChecked==true);ShowRoomStatus();}
     public void SmokeRoom(string path)
     {
         foreach(var kind in Enum.GetValues<FurnitureKind>()){FurnitureOptions.SelectedItem=kind;AddFurniture(this,new RoutedEventArgs());}

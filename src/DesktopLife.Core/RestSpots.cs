@@ -1,4 +1,4 @@
-namespace DesktopLife.Core;
+﻿namespace DesktopLife.Core;
 public sealed record RestSpot(string Id,FurnitureKind? Kind,double X,double Feet);
 public sealed class RestSpotPreference
 {
@@ -34,7 +34,7 @@ public sealed class RestSpotPreference
             var hasId=Guid.TryParse(s.Id.Split(':')[0],out var id);
             var suitability=s.Kind is FurnitureKind.PetBed or FurnitureKind.Cushion?1:s.Kind==FurnitureKind.Box?.85:s.Kind is null?.45:.7;
             var score=suitability+(hasId?HabitWeight(id,now,p):0)-Math.Min(2,Math.Abs(s.X-petX)/700)*(.4+p.Laziness*.3)
-                +(cursorX is {} x?(1-Math.Min(1,Math.Abs(s.X-x)/600))*Math.Clamp(bond/100,0,1)*p.Social*.2:0);
+                +(cursorX is {} x?(1-Math.Min(1,Math.Abs(s.X-x)/600))*Math.Clamp(bond/100,0,1)*p.Social*.65*(1-.5*p.Independence)+Math.Min(1,Math.Abs(s.X-x)/800)*p.Independence*.65:0);
             return Math.Exp(Math.Clamp(score*2,-6,4));
         }
         var weights=choices.Select(Weight).ToArray();var draw=random.NextDouble()*weights.Sum();

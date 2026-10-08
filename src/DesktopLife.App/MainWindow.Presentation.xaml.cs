@@ -13,17 +13,31 @@ public partial class MainWindow
     private void ChangePresentation(object sender,SelectionChangedEventArgs e)
     {
         if(!presentationReady)return;
-        settings=settings with {DisplayPriority=(DisplayPriority)Priorities.SelectedItem,PetAppearance=(PetAppearance)Appearances.SelectedItem};
-        settingsStore.Save(settings);Pet.SetAppearance(settings.PetAppearance);UpdatePetVisibility();
+        if(Priorities.SelectedItem is not DisplayPriority priority||Appearances.SelectedItem is not PetAppearance selected)return;
+        if(presenceReady)
+        {
+            if(selected!=careTarget)
+            {
+                if(!PresencePolicy.Includes(CurrentPresence,selected))PresenceOptions.SelectedIndex=(int)PresencePolicy.Only(selected);
+                SelectCare(selected);
+            }
+            settings=settings with{DisplayPriority=priority};
+        }
+        else
+        {
+            settings=settings with{DisplayPriority=priority,PetAppearance=selected};Pet.SetAppearance(selected);
+        }
+        settingsStore.Save(settings);UpdatePetVisibility();
     }
     public async Task SmokePresentation()
     {
         foreach(var appearance in Enum.GetValues<PetAppearance>())
         {
-            Appearances.SelectedItem=appearance;Pet.SetAction(BodyAction.Idle);Pet.UpdateLayout();
-            if(Pet.InputHitTest(new System.Windows.Point(60,112)) is null)throw new Exception("Appearance hitbox missing.");
+            Pet.SetAppearance(appearance);Pet.SetAction(BodyAction.Idle);Pet.UpdateLayout();
+            if(Pet.InputHitTest(Pet.DiagnosticHitPoint()) is null)throw new Exception($"Appearance hitbox missing: {appearance}.");
             foreach(var action in Enum.GetValues<BodyAction>())Pet.SetAction(action);
         }
+        Pet.SetAppearance(settings.PetAppearance);
         foreach(var priority in Enum.GetValues<DisplayPriority>())
         {
             Priorities.SelectedItem=priority;

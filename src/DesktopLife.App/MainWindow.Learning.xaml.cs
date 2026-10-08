@@ -9,6 +9,7 @@ public partial class MainWindow
     private SettingsStore settingsStore = null!;
     private readonly DispatcherTimer learningTimer = new() { Interval=TimeSpan.FromMilliseconds(250) };
     private double lastLearningTick;
+    private double lastLearningDisplayTick=-1;
     private void InitializeLearning(string dataRoot, AppSettings configuration, LearningState savedLearning)
     {
         settings=configuration with{BrainMode=BrainMode.Utility};
@@ -18,13 +19,15 @@ public partial class MainWindow
         DisplayWorkspace.Select(settings.ActiveDisplay);
         Pet.RemapWorkspace(previousWorkArea,DisplayWorkspace.Bounds);
         Pet.AttachHabits(Learning.State.LocationHabits);
+        Pet.BehaviorCompleted+=RecordCompletedBehavior;
+        Pet.FurnitureUseCompleted+=RecordFurnitureUse;
         Pet.RestoreRoom(Learning.State.Room,previousWorkArea);
         Pet.Art.RestoreWorks(Learning.State.Artworks);
         Pet.ParameterFactory=CreateParameters;
-        Pet.BehaviorPersonality=personality;Pet.Bond=Learning.State.Companion.Bond;
+        RefreshIdentity();Pet.Bond=Learning.State.Companion.Bond;
         Pet.CreativeAction+=(action,x,y)=>
         {
-            Pet.HasCreativeOutput=Pet.Art.Create(action,Pet.Parameters,Learning.State.Variation,x,y);
+            Pet.HasCreativeOutput=Pet.Art.Create(action,Pet.Parameters,Learning.State.Variation,x,y,settings.PetAppearance);
             if(!Pet.HasCreativeOutput)HitStatus.Text="作品已滿且全數保留；清除部分作品後可繼續創作。";
         };
         settingsStore=new(Path.Combine(dataRoot,"settings.json"));
@@ -37,9 +40,11 @@ public partial class MainWindow
             runningAction?.Stop();runningAction=null;Learning.Trace.Clear();
         };
         learningTimer.Tick += (_,_) => ObserveAction();
-        Loaded += (_,_) => learningTimer.Start();
+        LearningStatus.IsVisibleChanged+=(_,_)=>{if(LearningStatus.IsVisible)ShowLearning(force:true);};
+        StyleStatus.IsVisibleChanged+=(_,_)=>{if(StyleStatus.IsVisible)ShowVariation();};
+        Loaded += (_,_) => {if(!verificationFrozen)learningTimer.Start();};
         Closed += (_,_) => learningTimer.Stop();
-        ShowLearning();
+        ShowLearning(force:true);
     }
     private void ObserveAction()
     {
@@ -59,11 +64,14 @@ public partial class MainWindow
         HitStatus.Text=credits.Count==0?"牠感覺到你在身邊。":"牠記住了這次溫柔的互動。";
         if(button!=RewardButton.Middle)Care(CareKind.Pet);
         else Pet.Say("好，我先自己玩一下。",3);
-        ShowLearning();
+        ShowLearning(force:true);
     }
-    private void ShowLearning()
+    private void ShowLearning(bool force=false)
     {
-        if(!IsVisible)return;
+        if(!IsVisible||!LearningStatus.IsVisible){performance.SkippedDiagnosticRefreshes++;return;}
+        var now=lifeClock.Elapsed.TotalSeconds;
+        if(!force&&now-lastLearningDisplayTick<1){performance.SkippedDiagnosticRefreshes++;return;}
+        lastLearningDisplayTick=now;performance.LearningDisplayRefreshes++;
         var reward=Learning.LastReward;
         LearningStatus.Text=$"最近獎勵：{(reward is null ? "尚無" : $"{UiText.Label(reward.Button)} {reward.Amount:+0.##;-0.##}")} · 回溯 {Learning.Trace.Credits(lifeClock.Elapsed.TotalSeconds).Count} 樣本 / 5 秒";
         PreferenceStatus.Text="行為偏好："+string.Join(" · ",Learning.State.ActionPreference.OrderByDescending(p=>p.Value).Select(p=>$"{UiText.Label(p.Key)} {p.Value:+0.000;-0.000;0}"))
@@ -74,13 +82,13 @@ public partial class MainWindow
     {
         var before=Learning.State.PositiveRewards;
         var careBefore=Learning.State.Companion.CareCount;
-        Pet.SmokeClickAt(new System.Windows.Point(0,140),System.Windows.Input.MouseButton.Left);
+        Pet.SmokeClickAt(new System.Windows.Point(0,Pet.Height-2),System.Windows.Input.MouseButton.Left);
         if (Learning.State.PositiveRewards!=before) return false;
-        Pet.SmokeClickAt(new System.Windows.Point(60,112),System.Windows.Input.MouseButton.Left);
+        Pet.SmokeClickAt(Pet.DiagnosticHitPoint(),System.Windows.Input.MouseButton.Left);
         var passed=Learning.State.PositiveRewards==before+1 && Learning.State.ActionPreference.Values.Any(v=>v>0)
             && Learning.State.Companion.CareCount==careBefore+1 && Pet.CurrentAction==BodyAction.Nuzzle
 ;
-        if(!passed)throw new Exception($"Reward diagnostic: positive {before}->{Learning.State.PositiveRewards}, visible {Pet.IsVisible}, trace {Learning.LastCredits.Count}, action {Pet.CurrentAction}, drag {Pet.DragDiagnostic}, target {Pet.InputHitTest(new System.Windows.Point(60,112))?.GetType().Name}; {HitStatus.Text}");
+        if(!passed)throw new Exception($"Reward diagnostic: positive {before}->{Learning.State.PositiveRewards}, visible {Pet.IsVisible}, trace {Learning.LastCredits.Count}, action {Pet.CurrentAction}, drag {Pet.DragDiagnostic}, target {Pet.InputHitTest(Pet.DiagnosticHitPoint())?.GetType().Name}; {HitStatus.Text}");
         return true;
     }
 }

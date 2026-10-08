@@ -1,7 +1,7 @@
-namespace DesktopLife.Core;
+﻿namespace DesktopLife.Core;
 
 public enum CareKind { Feed, Pet, Play, Rest, Groom }
-public sealed record PetMemory(DateTimeOffset At, string Text);
+public sealed record PetMemory(DateTimeOffset At, string Text,string? Kind=null);
 public sealed class CompanionState
 {
     public string Name { get; set; } = "栗子";
@@ -12,17 +12,23 @@ public sealed class CompanionState
     public void Validate()
     {
         if(string.IsNullOrWhiteSpace(Name)||Name.Length>16||Name.Any(char.IsControl)||!double.IsFinite(Bond)||Bond<0||Bond>100||CareCount<0
-            ||Memories is null||Memories.Count>30||Memories.Any(m=>m is null||string.IsNullOrWhiteSpace(m.Text)||m.Text.Length>120)
+            ||Memories is null||Memories.Count>30||Memories.Any(m=>m is null||string.IsNullOrWhiteSpace(m.Text)||m.Text.Length>120||m.Kind?.Length>80)
             ||LastCare is null||LastCare.Keys.Any(k=>!Enum.IsDefined(k)))throw new InvalidDataException("陪伴資料無效。");
     }
-    public string Relationship => Bond<25?"正在認識你":Bond<50?"信任的玩伴":Bond<80?"黏人的家人":"最安心的依靠";
-    public void Remember(DateTimeOffset now,string text)
-    { Memories.Add(new(now,text));if(Memories.Count>30)Memories.RemoveRange(0,Memories.Count-30); }
+    public string Relationship => Bond<25?"正在認識你":Bond<50?"信任的玩伴":Bond<80?"熟悉的家人":"最安心的依靠";
+    public void Remember(DateTimeOffset now,string text,string? kind=null)
+    {
+        Memories.Add(new(now,text,kind));
+        // At most six significant records share the existing thirty-record budget.
+        while(Memories.Count(m=>m.Kind?.StartsWith("milestone:",StringComparison.Ordinal)==true)>6)
+            Memories.RemoveAt(Memories.FindIndex(m=>m.Kind?.StartsWith("milestone:",StringComparison.Ordinal)==true));
+        while(Memories.Count>30){var index=Memories.FindIndex(m=>m.Kind?.StartsWith("milestone:",StringComparison.Ordinal)!=true);Memories.RemoveAt(Math.Max(0,index));}
+    }
 }
 public sealed record CareResult(PetState State, bool Accepted, string Message, BodyAction Action);
 public static class CompanionCare
 {
-    public static CareResult Apply(PetState state,CompanionState companion,CareKind kind,DateTimeOffset now)
+    public static CareResult Apply(PetState state,CompanionState companion,CareKind kind,DateTimeOffset now,bool remember=true)
     {
         state.Validate();companion.Validate();if(!Enum.IsDefined(kind))throw new ArgumentOutOfRangeException(nameof(kind));
         var cooldown=kind==CareKind.Feed?60:kind==CareKind.Pet?8:20;
@@ -47,7 +53,7 @@ public static class CompanionCare
             _=>("我睡一下，你也記得休息。",BodyAction.Sleep)
         };
         companion.LastCare[kind]=now;companion.Bond=C(companion.Bond+(kind==CareKind.Pet?.25:.6));companion.CareCount++;
-        companion.Remember(now,kind switch{CareKind.Feed=>"你準備了一份飯飯。",CareKind.Pet=>"你溫柔地摸了摸牠。",CareKind.Play=>"你們一起玩球。",CareKind.Groom=>"你幫牠整理毛毛。",_=>"你陪牠安穩入睡。"});
+        if(remember)companion.Remember(now,kind switch{CareKind.Feed=>"你準備了一份飯飯。",CareKind.Pet=>"你溫柔地摸了摸牠。",CareKind.Play=>"你邀牠一起玩球。",CareKind.Groom=>"你幫牠整理毛毛。",_=>"你為牠安排休息時間。"});
         return new(next,true,text,action);
     }
     public static PetState Step(PetState p,TimeSpan elapsed,BodyAction action,bool present)

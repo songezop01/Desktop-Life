@@ -14,22 +14,29 @@ public partial class MainWindow : Window
     public EnvironmentState? LatestEnvironment { get; private set; }
     public HomeostasisSession Life { get; }
     private readonly OrganismStore organismStore;
+    private readonly OrganismSaveQueue saveQueue;
     private readonly Stopwatch lifeClock = new();
     private readonly DispatcherTimer lifeTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private TimeSpan lastLifeTick;
     private TimeSpan lastSaveTick;
     private DateTimeOffset? suspendedAt;
-    public MainWindow(string dataRoot, AppSettings settings)
+    private bool verificationFrozen;
+    public MainWindow(string dataRoot, AppSettings settings,Action<FrozenOrganismSnapshot>? diagnosticWriter=null)
     {
         InitializeComponent();
+        VersionBanner.Text=$"DESKTOP LIFE  /  陪伴小屋 {typeof(App).Assembly.GetName().Version?.ToString(3)}";
+        InitializePerformance();
+        InitializeIllustrations();
         organismStore = new OrganismStore(dataRoot);
+        saveQueue=diagnosticWriter is null?new(organismStore):new(diagnosticWriter);
         var checkpoint=organismStore.LoadOrMigrate(settings,DateTimeOffset.UtcNow);
         var saved = checkpoint.Pet;
         personality=checkpoint.Personality;
         Life = new(saved.State, saved.TotalRuntimeSeconds);
         Life.ApplyCompanionOffline(DateTimeOffset.UtcNow - saved.LastSaveTime);
         // Persist the applied offline interval once, so rapid restarts cannot reapply it.
-        InitializeLearning(dataRoot,settings,checkpoint.Learning);
+        InitializeLearning(dataRoot,settings with{PetAppearance=checkpoint.Settings.PetAppearance},checkpoint.Learning);
+        InitializePresence(checkpoint);
         if(!SavePetState())throw new IOException("初始狀態無法保存。");
         ShowHomeostasis();
         SettingsText.Text = "本機陪伴與偏好記憶，不連接雲端。真實桌面圖示互動需另外啟用；移動前備份，可一鍵恢復。";
@@ -37,13 +44,14 @@ public partial class MainWindow : Window
         lifeTimer.Tick += (_, _) => TickLife();
         Loaded += (_, _) =>
         {
-            Pet.Show(); lifeClock.Start(); lifeTimer.Start();
+            Pet.Show(); lifeClock.Start(); if(!verificationFrozen)lifeTimer.Start();
             InitializeTray();
+            if(verificationFrozen)visibilityTimer.Stop();
             SystemEvents.PowerModeChanged += PowerChanged;
             sensorTask ??= Task.Run(() => MonitorAsync(sensorCancellation.Token));
         };
         Closing += (_,e)=>{if(!explicitExit&&this.settings.CloseBehavior==CloseBehavior.Tray){e.Cancel=true;Hide();}};
-        Closing += (_, e) => { if(e.Cancel)return; TickLife(); if (!SavePetState()) e.Cancel = true; };
+        Closing += PersistBeforeClosing;
         Closed += (_, _) =>
         {
             lifeTimer.Stop(); SystemEvents.PowerModeChanged -= PowerChanged;
@@ -63,21 +71,22 @@ public partial class MainWindow : Window
     private PetSnapshot Snapshot() => new() { State = Life.State, LastSaveTime = DateTimeOffset.UtcNow, TotalRuntimeSeconds = Life.TotalRuntimeSeconds };
     public bool SavePetState()
     {
+        var started=Stopwatch.GetTimestamp();
         try
         {
-
-            Learning.State.Room=Pet.CaptureRoom();
-            Learning.State.Artworks=Pet.Art.Works.ToList();
-            organismStore.Save(new OrganismSnapshot{Pet=Snapshot(),Learning=Learning.State,Personality=personality,Settings=settings});
+            // Startup, session ending and isolated diagnostics need a durable barrier.
+            // Normal controls and periodic saves use QueuePetSave and never wait for disk on the dispatcher.
+            saveQueue.Enqueue(CapturePetSave()).GetAwaiter().GetResult();
             lastSaveTick = lifeClock.Elapsed;
             SaveStatus.Text = $"本機生理狀態已保存 {DateTime.Now:HH:mm:ss} · 每 60 秒自動保存";
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             SaveStatus.Text = $"保存失敗：{ex.Message}。請排除寫入問題後再試；保存成功前會保留視窗。";
             return false;
         }
+        finally{performance.ObserveSave(Stopwatch.GetElapsedTime(started).TotalMilliseconds);}
     }
     public bool VerifyPetSave()
     {
@@ -92,9 +101,10 @@ public partial class MainWindow : Window
         var elapsed = lifeClock.Elapsed;
         Life.AdvanceCompanion(elapsed-lastLifeTick,Pet.PhysiologicalAction,LatestEnvironment?.IdleSeconds.Value is <300);
         TickCompanion();
+        TickOther(Math.Max(0,(elapsed-lastLifeTick).TotalSeconds));
         lastLifeTick = elapsed;
         ShowHomeostasis();
-        if (elapsed - lastSaveTick >= TimeSpan.FromSeconds(60)) SavePetState();
+        if (!saveClosing&&elapsed - lastSaveTick >= TimeSpan.FromSeconds(60)) QueuePetSave();
     }
     private void PowerChanged(object sender, PowerModeChangedEventArgs e)
     {
@@ -107,25 +117,31 @@ public partial class MainWindow : Window
             }
             else if (e.Mode == PowerModes.Resume && suspendedAt is { } began)
             {
-                Life.ApplyCompanionOffline(DateTimeOffset.UtcNow - began);
-                suspendedAt = null; lastLifeTick = lifeClock.Elapsed;
+                Life.ApplyCompanionOffline(DateTimeOffset.UtcNow - began); foreach(var character in secondaryCharacters)character.Life.ApplyCompanionOffline(DateTimeOffset.UtcNow-began);
+                suspendedAt = null; lastLifeTick = lifeClock.Elapsed;lastDispatchProbe=Stopwatch.GetTimestamp();
                 LatestEnvironment = null; // do not reuse a pre-suspend activity sample
-                SavePetState(); ShowHomeostasis();
+                QueuePetSave(); ShowHomeostasis();
             }
         });
     }
-    private sealed record StateRow(string Name, double Value);
+    private sealed class StateRow(string name):System.ComponentModel.INotifyPropertyChanged
+    {
+        private static readonly System.ComponentModel.PropertyChangedEventArgs valueChanged=new(nameof(Value));
+        public string Name {get;}=name;
+        public double Value {get;private set;}
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        public void Set(double value)
+        {if(Value==value)return;Value=value;PropertyChanged?.Invoke(this,valueChanged);}
+    }
+    private readonly StateRow[] homeostasisRows=[new("能量"),new("飢餓"),new("心情"),new("無聊"),new("好奇"),new("孤單"),new("興奮"),new("疲勞")];
     private void ShowHomeostasis()
     {
-        if(!IsVisible)return;
-        var s = Life.State;
-        HomeostasisRows.ItemsSource = new[]
-        {
-            new StateRow("能量",s.Energy), new StateRow("飢餓",s.Hunger),
-            new StateRow("心情",s.Mood), new StateRow("無聊",s.Boredom),
-            new StateRow("好奇",s.Curiosity), new StateRow("孤單",s.Loneliness),
-            new StateRow("興奮",s.Excitement), new StateRow("疲勞",s.Fatigue)
-        };
+        if(!IsVisible||!HomeostasisRows.IsVisible){performance.SkippedDiagnosticRefreshes++;return;}
+        performance.HomeostasisDisplayRefreshes++;
+        var s = presenceReady?SelectedState:Life.State;
+        if(HomeostasisRows.ItemsSource is null)HomeostasisRows.ItemsSource=homeostasisRows;
+        homeostasisRows[0].Set(s.Energy);homeostasisRows[1].Set(s.Hunger);homeostasisRows[2].Set(s.Mood);homeostasisRows[3].Set(s.Boredom);
+        homeostasisRows[4].Set(s.Curiosity);homeostasisRows[5].Set(s.Loneliness);homeostasisRows[6].Set(s.Excitement);homeostasisRows[7].Set(s.Fatigue);
         FeedingStatus.Text = "飯飯補充能量，睡眠恢復精神；玩耍與陪伴讓牠開心。";
     }
     private async Task MonitorAsync(CancellationToken cancellation)
@@ -153,7 +169,8 @@ public partial class MainWindow : Window
     private void ShowEnvironment(EnvironmentState state)
     {
         LatestEnvironment = state;
-        if(!IsVisible)return;
+        if(!IsVisible||!SensorRows.IsVisible){performance.SkippedDiagnosticRefreshes++;return;}
+        performance.SensorDisplayRefreshes++;
         SensorStatus.Text = $"每秒更新 · {state.Timestamp.ToLocalTime():HH:mm:ss} · 取樣 {state.SampleMilliseconds:F1} ms";
         SensorRows.ItemsSource = new[]
         {
@@ -167,9 +184,9 @@ public partial class MainWindow : Window
     }
     private void ShowPet(object sender, RoutedEventArgs e) {userHidden=false;UpdatePetVisibility();}
     private void HidePet(object sender, RoutedEventArgs e) {userHidden=true;UpdatePetVisibility();}
-    private void ResetPet(object sender, RoutedEventArgs e) => Pet.ResetPosition();
-    private void ClearArt(object sender,RoutedEventArgs e){Pet.Art.ClearWorks();SavePetState();}
-    private void KeepArt(object sender,RoutedEventArgs e){Pet.Art.KeepWorks();SavePetState();}
+    private void ResetPet(object sender, RoutedEventArgs e) => CharacterWindow(careTarget).ResetPosition();
+    private void ClearArt(object sender,RoutedEventArgs e){Pet.Art.ClearWorks();QueuePetSave();}
+    private void KeepArt(object sender,RoutedEventArgs e){Pet.Art.KeepWorks();QueuePetSave();}
     private void ToggleArt(object sender,RoutedEventArgs e)=>Pet.Art.ToggleWorks();
     private void AutoPet(object sender, RoutedEventArgs e) { automaticActions=true;Pet.AllowCursorAttraction=QuietMode.IsChecked!=true; runningAction?.Stop();runningAction=null; }
     private void SelectAction(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { if (Actions.SelectedItem is BodyAction action) SetManualAction(action); }

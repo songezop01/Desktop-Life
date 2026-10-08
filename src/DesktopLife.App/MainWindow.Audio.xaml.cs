@@ -23,7 +23,7 @@ public partial class MainWindow
     private void ChangeAudio(object sender,RoutedEventArgs e)
     {
         if(audio is null)return;
-        settings=settings with{AudioVolume=AudioVolume.Value/100,MuteAudio=MuteAudio.IsChecked==true};settingsStore.Save(settings);
+        settings=settings with{AudioVolume=AudioVolume.Value/100,MuteAudio=MuteAudio.IsChecked==true};QueueSettingsSave();
         audio.Volume=settings.AudioVolume;audio.CatVolume=settings.CatVolume;audio.ToyVolume=settings.ToyVolume;audio.Muted=settings.MuteAudio||settings.QuietCompanion;
         if(audio.Muted||audio.Volume==0)audio.Stop();
         audio.ApplyLevels();
@@ -34,7 +34,7 @@ public partial class MainWindow
     private void ChangeAudioCategory(object sender,System.Windows.RoutedPropertyChangedEventArgs<double> e)
     {
         if(audio is null)return;
-        settings=settings with{CatVolume=CatVolume.Value/100,ToyVolume=ToyVolume.Value/100,AmbientVolume=AmbientVolume.Value/100};settingsStore.Save(settings);
+        settings=settings with{CatVolume=CatVolume.Value/100,ToyVolume=ToyVolume.Value/100,AmbientVolume=AmbientVolume.Value/100};QueueSettingsSave();
         audio.CatVolume=settings.CatVolume;audio.ToyVolume=settings.ToyVolume;audio.AmbientVolume=settings.AmbientVolume;
         audio.ApplyLevels();
     }
