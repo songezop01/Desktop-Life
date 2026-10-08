@@ -103,6 +103,7 @@ jobs:
             "### $env:RELEASE_TAG already exists" >> $env:GITHUB_STEP_SUMMARY
             'Build and unit tests passed. Existing tags, notes and assets were left unchanged.' >> $env:GITHUB_STEP_SUMMARY
           }
+          exit 0
 
       - name: Publish and package the standalone Windows download
         if: steps.existing.outputs.exists == 'false'
