@@ -8,7 +8,7 @@ using DesktopLife.Core;
 using DesktopLife.Windows;
 namespace DesktopLife.App;
 
-public sealed class RoomWindow : Window
+public sealed partial class RoomWindow : Window
 {
     public RoomItem Item {get;private set;}
     private (RoomItem Item,double Scale,bool Editing)? contextKey;
@@ -45,17 +45,19 @@ public sealed class RoomWindow : Window
         WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowActivated=false;ShowInTaskbar=false;ResizeMode=ResizeMode.NoResize;
         Title="房間家具 · "+UiText.Label(item.Kind);Content=canvas;Draw();Place(item.X,item.Y);
         SourceInitialized+=(_,_)=>{DesktopInteraction.MakeNonActivating(new WindowInteropHelper(this).Handle);Place(Item.X,Item.Y);SetEditing(editing);};
-        drag=new(this,canvas,_=>{},(x,y)=>Place(x,y),_=>Changed?.Invoke());
+        drag=new(this,canvas,_=>{},(x,y)=>Place(x,y),_=>Changed?.Invoke(),()=>editing);
         var menu=new ContextMenu();var remove=new MenuItem{Header="收起這件家具"};remove.Click+=(_,_)=>Removed?.Invoke(this);menu.Items.Add(remove);canvas.ContextMenu=menu;
+        InitializeFoodSurface();
     }
     public static (double Width,double Height) Size(FurnitureKind kind)=>kind switch
     {FurnitureKind.HumanBed=>(280,110),FurnitureKind.Sofa=>(260,120),FurnitureKind.Chair=>(110,145),FurnitureKind.DiningTable=>(250,160),FurnitureKind.Computer=>(110,90),FurnitureKind.DrawingBook=>(100,28),FurnitureKind.LegoBox=>(130,65),FurnitureKind.CatBowl=>(80,28),FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),_=>(140,45)};
     public void SetEditing(bool value)
     {
         if(editing==value&&editingApplied)return;
-        editing=value;canvas.IsHitTestVisible=value;Opacity=value?.8:1;
+        editing=value;canvas.IsHitTestVisible=value||IsFoodSurface;Opacity=value?.8:1;
+        canvas.Background=value||!IsFoodSurface?Brushes.Transparent:null;
         var handle=new WindowInteropHelper(this).Handle;
-        if(handle!=0){DesktopInteraction.SetClickThrough(handle,!value);editingApplied=true;}
+        if(handle!=0){DesktopInteraction.SetClickThrough(handle,!value&&!IsFoodSurface);editingApplied=true;}
     }
     private void Place(double x,double y)
     {

@@ -17,9 +17,10 @@ public partial class MainWindow
         try
         {
             FlushPendingSettings();
+            PruneFoodToRoom();
             Learning.State.Room=Pet.CaptureRoom();Learning.State.Artworks=Pet.Art.Works.ToList();
             return FrozenOrganismSnapshot.Capture(new OrganismSnapshot{Pet=Snapshot(),Learning=Learning.State,Personality=personality,Settings=settings,
-                OtherCharacter=otherCharacter?.Capture(),AdditionalCharacter=additionalCharacter?.Capture(),PrimaryPosition=Pet.Position});
+                OtherCharacter=otherCharacter?.Capture(),AdditionalCharacter=additionalCharacter?.Capture(),PrimaryPosition=Pet.Position,Food=food});
         }
         finally{performance.ObserveSnapshotCapture(Stopwatch.GetElapsedTime(started).TotalMilliseconds);}
     }

@@ -7,6 +7,7 @@ public partial class PetWindow
     public List<ToyWindow> ExtraToys {get;}=[];
     public IEnumerable<ToyWindow> AllToys=>new[]{Square,Ball}.Concat(ExtraToys);
     public event Action? RoomChanged;
+    public event Action<RoomWindow>? FurnitureAdded;
     public bool EditingRoom {get;private set;}
     private readonly GravityBody petGravity=new();
     private double lastJump;
@@ -36,7 +37,7 @@ public partial class PetWindow
         Art.Update(to,[],body.Action,clock.Elapsed.TotalSeconds,body.X,body.Y);ApplyPosition();
     }
     public void SetRoomEditing(bool editing)
-    {EditingRoom=editing;if(editing){sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute(preserveRecovery:true);queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
+    {EditingRoom=editing;if(editing){ReleaseFoodReservation();sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute(preserveRecovery:true);queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
     public void AddRoomItem(RoomItem item)
     {
         if(Furniture.Count+ExtraToys.Count>=24)return;
@@ -50,7 +51,7 @@ public partial class PetWindow
         else
         {
             var window=new RoomWindow(item);window.SetSceneScale(House?.SceneScale??1);window.SetEditing(EditingRoom);window.Changed+=()=>{if(House is {} h)window.SetFloor(h.Floors.OrderBy(f=>Math.Abs(f.Y-window.Item.Y-window.Height)).First().Index);RoomChanged?.Invoke();};
-            window.Removed+=f=>{if(teaserTarget==f){teaserTarget=null;teaserPawTarget=null;}Furniture.Remove(f);restPreference.Prune(Furniture.Select(w=>w.Item.Id));f.Close();RoomChanged?.Invoke();};Furniture.Add(window);
+            window.Removed+=f=>{if(teaserTarget==f){teaserTarget=null;teaserPawTarget=null;}Furniture.Remove(f);restPreference.Prune(Furniture.Select(w=>w.Item.Id));f.Close();RoomChanged?.Invoke();};Furniture.Add(window);FurnitureAdded?.Invoke(window);
         }
     }
     public async Task SmokeGravity()

@@ -80,6 +80,7 @@ public sealed class CharacterRuntime
     public string Care(CareKind kind,out bool accepted)
     {
         accepted=false;
+        if(kind==CareKind.Feed)return "請點飼料碗補充飼料，或點餐桌準備料理；角色餓了會自行用餐。";
         if(Window.CareUnavailableReason(kind) is {} unavailable)return unavailable;
         var now=DateTimeOffset.UtcNow;var result=CompanionCare.Apply(Life.State,Learning.State.Companion,kind,now,false);
         if(!result.Accepted)return result.Message;

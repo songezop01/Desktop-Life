@@ -30,6 +30,7 @@ public partial class PetWindow
         };
         if(activity is null)return false;
         if(!RoomActivityPolicy.Allowed(appearance,activity.Value))return false;
+        if(activity==RoomActivity.Feed&&FoodForFurniture is not null)return TryBeginFoodActivity();
         roomActivity=activity;activityProduced=false;activityChair=null;activityTemplate=movementRandom.Next(4);
         var use=RoomActivityPolicy.Use(activity.Value);var b=Bounds();var platforms=RoomPlatforms();
         var room=Furniture.Select(f=>f.Item).ToArray();
@@ -88,6 +89,7 @@ public partial class PetWindow
     {
         var use=RoomActivityPolicy.Use(roomActivity!.Value);
         var exists=homeTarget is null||!EditingRoom&&Furniture.Any(f=>f.Item==homeTarget)&&(activityChair is null||Furniture.Any(f=>f.Item==activityChair));
+        if(roomActivity==RoomActivity.Feed&&FoodForFurniture is not null)exists=exists&&FoodTargetAvailable();
         if(homeTarget is {} target&&!FurnitureCompatibility.CanUse(appearance,target.Kind,use))
         {InvalidFurnitureInteractions++;s.Interrupt(BehaviorInterruptReason.Safety);}
         var reached=Math.Abs(body.X+HalfWidth-homeX)<4&&Math.Abs(body.Y+BodyHeight-homeFeet)<5;
@@ -95,6 +97,7 @@ public partial class PetWindow
         attentionPoint=new(homeX,homeFeet-60);sequencePoseAge=s.PhaseAge;
         poseAction=s.Phase==BehaviorPhase.Approach?BodyAction.Walk:appearance!=PetAppearance.Girl&&s.Phase==BehaviorPhase.Work?BodyAction.Eat:BodyAction.Sit;
         if(s.Phase==BehaviorPhase.Approach)MovePetToward(homeX-HalfWidth,homeFeet-BodyHeight,dt,Bounds(),Parameters.Movement.Speed*.8);
+        if(roomActivity==RoomActivity.Feed&&FoodForFurniture is not null)TickFoodContact(s,dt,reached);
         if(s.Phase==BehaviorPhase.Close&&!activityProduced&&s.InterruptedBy is null)
         {
             activityProduced=true;LearnHome(use);

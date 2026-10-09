@@ -1,10 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 namespace DesktopLife.Core;
 public sealed record OrganismSnapshot
 {
-    // Older readers reject schema seven before discarding fixed house floors.
-    public const int CurrentSchemaVersion = 7;
+    // Older readers reject schema eight before discarding physical food inventory.
+    public const int CurrentSchemaVersion = 8;
     [JsonRequired] public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public CharacterProfile? OtherCharacter {get;init;}
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
@@ -14,16 +15,23 @@ public sealed record OrganismSnapshot
     [JsonRequired] public LearningState Learning { get; init; } = new();
     [JsonRequired] public PersonalityProfile Personality { get; init; } = new();
     [JsonRequired] public AppSettings Settings { get; init; } = new();
+    [JsonRequired] public FoodInventoryState Food { get; init; } = new();
     public void Validate()
     {
-        if(SchemaVersion!=CurrentSchemaVersion||Pet is null||Learning is null||Personality is null||Settings is null)throw new InvalidDataException("Unknown organism schema or missing data.");
-        Pet.Validate();Learning.Validate();Personality.Validate();Settings.Validate();
+        if(SchemaVersion!=CurrentSchemaVersion||Pet is null||Learning is null||Personality is null||Settings is null||Food is null)throw new InvalidDataException("Unknown organism schema or missing data.");
+        Pet.Validate();Learning.Validate();Personality.Validate();Settings.Validate();Food.Validate();
         OtherCharacter?.Validate();
         AdditionalCharacter?.Validate();
         if(OtherCharacter?.Kind==Settings.PetAppearance||AdditionalCharacter?.Kind==Settings.PetAppearance||
             OtherCharacter is not null&&AdditionalCharacter?.Kind==OtherCharacter.Kind)
             throw new InvalidDataException("角色不可使用相同身分。");
         if(PrimaryPosition is {} p&&(!double.IsFinite(p.X)||!double.IsFinite(p.Y)))throw new InvalidDataException("角色位置無效。");
+        foreach(var serving in Food.Servings)
+        {
+            var furniture=Learning.Room.Items.FirstOrDefault(item=>item.Id==serving.FurnitureId);
+            if(furniture is null||!FoodCatalog.CanServe(furniture.Kind,serving.Kind))
+                throw new InvalidDataException("食物必須附著於主場景現存的食盆或餐桌。");
+        }
     }
 
     public CharacterProfile? GetCharacter(PetAppearance kind)
@@ -42,14 +50,26 @@ public sealed class OrganismStore(string directory)
     private static OrganismSnapshot Read(string path)
     {
         var json=File.ReadAllText(path);
+        var legacy=false;
         using(var document=JsonDocument.Parse(json))
         {
             if(document.RootElement.ValueKind!=JsonValueKind.Object)throw new InvalidDataException("存檔格式無效。");
-            if(document.RootElement.TryGetProperty("SchemaVersion",out var version)&&version.ValueKind==JsonValueKind.Number&&version.TryGetInt32(out var number)&&number>OrganismSnapshot.CurrentSchemaVersion)
+            if(!document.RootElement.TryGetProperty("SchemaVersion",out var version)||version.ValueKind!=JsonValueKind.Number||!version.TryGetInt32(out var number))
+                throw new InvalidDataException("存檔缺少有效版本。");
+            if(number>OrganismSnapshot.CurrentSchemaVersion)
                 throw new NotSupportedException("存檔來自較新的程式版本，請更新程式；原檔未被修改。");
+            legacy=number is >=2 and <=7;
+        }
+        // Food is required in schema eight. Inject the migration default only for
+        // known older schemas, keeping their exact on-disk bytes for the next backup.
+        if(legacy)
+        {
+            var migrated=JsonNode.Parse(json)!.AsObject();
+            migrated["SchemaVersion"]=OrganismSnapshot.CurrentSchemaVersion;
+            migrated["Food"]=JsonSerializer.SerializeToNode(new FoodInventoryState());
+            json=migrated.ToJsonString();
         }
         var value=JsonSerializer.Deserialize<OrganismSnapshot>(json)??throw new InvalidDataException("存檔內容為空。");
-        if(value.SchemaVersion is 2 or 3 or 4 or 5 or 6)value=value with{SchemaVersion=OrganismSnapshot.CurrentSchemaVersion};
         value.Validate();return value;
     }
     private static bool Damaged(Exception ex)=>ex is JsonException or InvalidDataException or ArgumentException;

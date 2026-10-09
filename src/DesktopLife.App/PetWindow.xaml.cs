@@ -49,6 +49,7 @@ public partial class PetWindow : Window, IAnimationController
     public void RestorePosition(RoomPoint point){body.Place(point.X,point.Y,Bounds());ApplyPosition();}
     public void SuspendPresence()
     {
+        ReleaseFoodReservation();
         Occupancy.Release(appearance);sequence=null;homeTarget=null;restSpot=null;queuedAction=null;
         requestedCare=null;activeCare=null;requestedActivity=null;requestedToy=null;playTarget=null;
         teaserTarget=null;teaserPawTarget=null;attentionPoint=null;sequencePoseAge=null;feline.Clip=null;
@@ -74,6 +75,7 @@ public partial class PetWindow : Window, IAnimationController
     {
         if(this.appearance!=appearance)
         {
+            ReleaseFoodReservation();
             Occupancy.Release(this.appearance);
             BehaviorCompleted?.Invoke(new(LifeBehavior.Observe,false,false,0,false));
             sequence=null;queuedAction=null;requestedCare=null;activeCare=null;homeTarget=null;feline.Clip=null;CancelRoute();
@@ -88,7 +90,7 @@ public partial class PetWindow : Window, IAnimationController
         CatVisual.Visibility=appearance==PetAppearance.Cat?Visibility.Visible:Visibility.Collapsed;
         ApplyPose();
     }
-    public void SetPaused(bool value)=>paused=value;
+    public void SetPaused(bool value){paused=value;if(value)ReleaseFoodReservation();}
     public event Action<PetSound,double>? SoundRequested;
     public event Action<RewardButton>? Hit;
     public event Action<CareKind>? CareRequested;
@@ -133,13 +135,13 @@ public partial class PetWindow : Window, IAnimationController
             if(worldOwner is not null){if(IsVisible&&simulationEnabled){previous=clock.Elapsed.TotalSeconds;timer.Start();}else timer.Stop();}
         };
         Loaded += (_, _) => {if(simulationEnabled)timer.Start();};
-        Closed += (_, _) => {timer.Stop();Occupancy.Release(appearance);if(worldOwner is null){houseSurface?.Close();Art.Close();Square.Close();Ball.Close();foreach(var f in Furniture)f.Close();foreach(var t in ExtraToys)t.Close();}};
+        Closed += (_, _) => {timer.Stop();ReleaseFoodReservation();Occupancy.Release(appearance);if(worldOwner is null){houseSurface?.Close();Art.Close();Square.Close();Ball.Close();foreach(var f in Furniture)f.Close();foreach(var t in ExtraToys)t.Close();}};
     }
     private static BodyBounds Bounds()
     {
         return DisplayWorkspace.Bounds;
     }
-    public void ResetPosition() { Occupancy.Release(appearance);homeTarget=null;feline.Clip=null;sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
+    public void ResetPosition() { ReleaseFoodReservation();Occupancy.Release(appearance);homeTarget=null;feline.Clip=null;sequence=null;queuedAction=null;requestedCare=null;activeCare=null;attentionPoint=null;CancelRoute();body.Reset(Bounds());petGravity.VX=petGravity.VY=0; ApplyPosition(); }
     public void SetAction(BodyAction action)
     {
         action=CharacterCapability.Resolve(appearance,action);
@@ -225,6 +227,7 @@ public partial class PetWindow : Window, IAnimationController
         previousCursor=cursor;
         TickToyAttention(dt);
         var beforeX=body.X;
+        var walkBefore=new WalkDistanceSample(body.X,body.Y,petGravity.Grounded);var stairBefore=IsOnStair;
         var elapsed=now-actionStarted;var movement=Parameters.Movement;poseAction=null;teaserPawTarget=null;sequencePoseAge=null;navigationStepped=false;
         var bounds=Bounds();var items=new[]{new DesktopObject("square","Icon",Square.Model.X,Square.Model.Y),new DesktopObject("ball","Toy",Ball.Model.X,Ball.Model.Y)};
         var recovering=StepNavigationRecovery(dt);
@@ -281,7 +284,10 @@ public partial class PetWindow : Window, IAnimationController
         StepPetGravity(dt);
         if(worldOwner is null)Art.Update(bounds,items,body.Action,now,body.X,body.Y);
         if(Math.Abs(body.X-beforeX)>.05)facing=body.X>beforeX?1:-1;
-        sprite.AdvanceWalk(Math.Abs(body.X-beforeX)/(BodyHeight/144));
+        var walkingPose=(poseAction??body.Action) is BodyAction.Walk or BodyAction.Wander or BodyAction.Explore or BodyAction.ChaseCursor or BodyAction.AvoidCursor;
+        var walkKind=!walkingPose?WalkDistanceKind.None:houseControlledThisFrame&&(stairBefore||IsOnStair)?WalkDistanceKind.Stair:WalkDistanceKind.Floor;
+        sprite.AdvanceWalk(WalkDistanceSampler.Measure(walkBefore,new(body.X,body.Y,petGravity.Grounded),
+            BodyHeight/DesktopBody.Height,walkKind,continuousMotion:!Interacting));
         ApplyPosition();
         ApplyPose();
     }
@@ -334,7 +340,7 @@ public partial class PetWindow : Window, IAnimationController
         Canvas.SetTop(GroomComb,67+Math.Sin(t*6)*6);
         ToyPaw.Visibility=appearance==PetAppearance.Cat&&(poseAction==BodyAction.BatToy||body.Action==BodyAction.BatToy)?Visibility.Visible:Visibility.Collapsed;
         ToyPaw.RenderTransform=new ScaleTransform(facing,1,58,0);
-        FoodBowl.Visibility=appearance==PetAppearance.Cat&&body.Action==BodyAction.Eat&&sequence?.Phase==BehaviorPhase.Work?Visibility.Visible:Visibility.Collapsed;
+        FoodBowl.Visibility=FoodForFurniture is null&&appearance==PetAppearance.Cat&&body.Action==BodyAction.Eat&&sequence?.Phase==BehaviorPhase.Work?Visibility.Visible:Visibility.Collapsed;
         Affection.Visibility=body.Action is BodyAction.Nuzzle or BodyAction.Greet?Visibility.Visible:Visibility.Collapsed;
         Canvas.SetTop(Affection,25-Math.Sin(t*2)*5);Affection.Opacity=.6+.4*Math.Abs(Math.Sin(t*2));
         SleepingCat.Visibility=pose.Sleeping&&appearance==PetAppearance.Cat?Visibility.Visible:Visibility.Collapsed;
@@ -393,7 +399,7 @@ public partial class PetWindow : Window, IAnimationController
         sprite.Pose(actual,t,facing,CurrentRoomActivity,sequence?.Phase);
         Character.Opacity=body.Action==BodyAction.Hide?.7:1;
         ToyPaw.Visibility=Pencil.Visibility=Visibility.Collapsed;
-        FoodBowl.Visibility=appearance!=PetAppearance.Girl&&actual==BodyAction.Eat?Visibility.Visible:Visibility.Collapsed;
+        FoodBowl.Visibility=FoodForFurniture is null&&appearance!=PetAppearance.Girl&&actual==BodyAction.Eat?Visibility.Visible:Visibility.Collapsed;
         GroomComb.Visibility=appearance!=PetAppearance.Girl&&ShowComb?Visibility.Visible:Visibility.Collapsed;
         PettingHand.Visibility=ShowHand?Visibility.Visible:Visibility.Collapsed;
         Canvas.SetLeft(PettingHand,40);Canvas.SetTop(PettingHand,45+Math.Sin(t*4)*2);

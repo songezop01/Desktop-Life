@@ -36,6 +36,7 @@ public partial class MainWindow
     private void InvokeTrayAction(Action action){if(!saveClosing)action();}
     private void SetPaused(bool paused)
     {
+        if(runtimeDiagnosticSceneSuspended&&!paused)return;
         aiPaused=paused;Learning.Trace.Clear();Pet.SetPaused(paused);
         foreach(var character in secondaryCharacters)character.SetPaused(paused);
         if(!paused){lastLearningTick=lifeClock.Elapsed.TotalSeconds;runningAction=null;}
@@ -43,7 +44,7 @@ public partial class MainWindow
     }
     private void UpdatePetVisibility(ForegroundState? diagnosticState=null)
     {
-        var visible=DisplayPolicy.Visible(settings.DisplayPriority,diagnosticState??FullscreenDetector.Read(DisplayWorkspace.Active.Handle),userHidden);
+        var visible=DisplayPolicy.Visible(settings.DisplayPriority,diagnosticState??FullscreenDetector.Read(DisplayWorkspace.Active.Handle),userHidden)&&!runtimeDiagnosticSceneSuspended;
         foreach(var surface in Pet.Surfaces.Concat(secondaryCharacters.Select(character=>(Window)character.Window)))
         {
             var topmost=settings.DisplayPriority!=DisplayPriority.Desktop;

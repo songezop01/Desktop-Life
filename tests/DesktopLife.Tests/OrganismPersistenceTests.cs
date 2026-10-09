@@ -17,6 +17,7 @@ public sealed class OrganismPersistenceTests:IDisposable
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
+    [InlineData(7)]
     public void SupportedLegacySchemasPreserveBothResidentsAndOriginalBackup(int schema)
     {
         var epoch=new DateTimeOffset(2026,9,29,0,0,0,TimeSpan.Zero);

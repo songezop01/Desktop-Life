@@ -16,6 +16,7 @@ public partial class MainWindow
     }
     private void Care(CareKind kind)
     {
+        if(kind==CareKind.Feed){CareStatus.Text="請點飼料碗補充飼料，或點餐桌準備料理；角色餓了會自行用餐。";Pet.ShowCareFeedback(CareStatus.Text);return;}
         if(Pet.CareUnavailableReason(kind) is {} unavailable){CareStatus.Text=unavailable;Pet.ShowCareFeedback(unavailable);return;}
         var result=CompanionCare.Apply(Life.State,Learning.State.Companion,kind,DateTimeOffset.UtcNow,remember:false);
         CareStatus.Text=result.Accepted?CharacterCapability.CareDescription(kind,settings.PetAppearance):result.Message;

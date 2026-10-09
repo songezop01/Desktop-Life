@@ -71,6 +71,7 @@ public partial class PetWindow
     }
     private void BeginSequence(BodyAction action)
     {
+        ReleaseFoodReservation();
         if(sequence is {Finished:false})BehaviorCompleted?.Invoke(new(LifeBehavior.Observe,false,false,0,false));
         homeTarget=null;sequence=null;attentionPoint=null;phaseContact=false;activeCare=requestedCare;requestedCare=null;
         sequenceAutonomous=AutonomousIntent&&activeCare is null;
@@ -114,6 +115,7 @@ public partial class PetWindow
     }
     private void EndSequence()
     {
+        ReleaseFoodReservation();
         Occupancy.Release(appearance);
         if(sequence is {} completed)
         {

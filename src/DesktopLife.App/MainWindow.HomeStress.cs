@@ -15,7 +15,7 @@ public partial class MainWindow
     {var count=0;EnumWindows((window,_)=>{GetWindowThreadProcessId(window,out var owner);if(owner==processId)count++;return true;},IntPtr.Zero);return count;}
     private static Dictionary<string,int> MergeNavigationReasons(IEnumerable<Dictionary<string,int>> sources)
         =>sources.SelectMany(source=>source).GroupBy(reason=>reason.Key).ToDictionary(group=>group.Key,group=>group.Sum(reason=>reason.Value));
-    public async Task RunHomeStress(string root,int seconds,PresenceMode presence=PresenceMode.Both,int floors=1)
+    public async Task RunHomeStress(string root,int seconds,PresenceMode presence=PresenceMode.Both,int floors=1,CancellationToken cancellation=default,Action<double,string>? progress=null,bool exitWhenFinished=true)
     {
         if(presence is not (PresenceMode.Both or PresenceMode.All))throw new ArgumentOutOfRangeException(nameof(presence));
         Priorities.SelectedItem=DisplayPriority.Desktop;Hide();automaticActions=true;QuietMode.IsChecked=false;
@@ -40,7 +40,7 @@ public partial class MainWindow
         {
             for(var t=0;t<seconds;t++)
             {
-                await Task.Delay(1000);Pet.StressSceneStep(t);
+                await Task.Delay(1000,cancellation);Pet.StressSceneStep(t);
                 if(seconds>=1200&&t>=600)
                 {
                     // The long workload adds bounded, reproducible geometry edits and creation/retention/cleanup cycles.
@@ -113,6 +113,7 @@ public partial class MainWindow
                     File.AppendAllText(Path.Combine(root,"stress-samples.jsonl"),JsonSerializer.Serialize(sample)+Environment.NewLine);
                 }
                 if(t%30==29||failure is not null)File.WriteAllText(Path.Combine(root,"stress-progress.json"),JsonSerializer.Serialize(sample));
+                progress?.Invoke(watch.Elapsed.TotalSeconds,string.Join("、",participatingCharacters.Select(character=>$"{UiText.Label(character.Kind)}：{character.Window.NavigationFailures} 次導航恢復／{character.Window.StuckSequences} 次卡住")));
                 if(failure is not null)throw new InvalidOperationException(failure+"; see retained stress-report.json and stress-progress.json.");
                 if(t==2)
                 {
@@ -122,6 +123,8 @@ public partial class MainWindow
             }
             workloadSeconds=watch.Elapsed.TotalSeconds;workloadCpuSeconds=process.TotalProcessorTime.TotalSeconds-firstCpu;
             workloadAllocatedMB=(GC.GetTotalAllocatedBytes()-allocated)/1048576d;workloadPerformance=CapturePerformance();
+            cancellation.ThrowIfCancellationRequested();
+            progress?.Invoke(watch.Elapsed.TotalSeconds,"場景完成；正在保存並核對隔離資料");
             // Freeze the isolated instance, await a real durable write, then validate the exact captured graph from disk.
             lifeTimer.Stop();learningTimer.Stop();visibilityTimer.Stop();SetPaused(true);
             foreach(var window in characterWindows)window.SetSimulationEnabled(false);
@@ -132,7 +135,9 @@ public partial class MainWindow
             var kinds=Enum.GetValues<PetAppearance>().Where(kind=>reloaded.GetCharacter(kind) is not null).Select(kind=>kind.ToString()).ToArray();
             durableReloadVerification=new{Succeeded=exact,receipt.Revision,receipt.WriteMilliseconds,receipt.DurableMilliseconds,CharacterKinds=kinds};
             if(!exact)throw new IOException("Final durable stress snapshot differs from the captured three-role state.");
+            cancellation.ThrowIfCancellationRequested();
         }
+        catch(OperationCanceledException) when(cancellation.IsCancellationRequested){throw;}
         catch{exceptions++;throw;}
         finally
         {
@@ -146,7 +151,8 @@ public partial class MainWindow
             var result=new{StairTrips=participants.Sum(w=>w.StairTrips),HouseRouteFailures=participants.Sum(w=>w.HouseRouteFailures),Seed=70,Workload=seconds>=1200?"native-home-v2-resource-cycles":"native-home-v1",StartedUtc=startedUtc,
                 SteadyStartedUtc=startedUtc.AddSeconds(steadyMeasurementStartedAtSeconds),DurableReloadVerification=durableReloadVerification,
                 RandomMutationSeed=701,RandomMutations=randomMutations,ArtworkAttempts=artworkAttempts,ArtworkCreated=artworkCreated,ArtworkClears=artworkClears,
-                Presence=presence.ToString(),Floors=floors,Workspace=DisplayWorkspace.Bounds,Characters=participatingCharacters.Select(character=>character.Kind.ToString()).ToArray(),
+                Presence=presence.ToString(),Floors=floors,Workspace=DisplayWorkspace.Bounds,Displays=DisplayWorkspace.Enumerate().Select(display=>new{display.Scale,display.PixelBounds,display.PixelWorkArea,display.Primary,display.Portrait}).ToArray(),Characters=participatingCharacters.Select(character=>character.Kind.ToString()).ToArray(),
+                Stopped=cancellation.IsCancellationRequested,CompletedWorkload=workloadSeconds is not null&&!cancellation.IsCancellationRequested,
                 InvalidFurnitureInteractions=participants.Sum(window=>window.InvalidFurnitureInteractions),SecondaryStuckSequences=secondaryParticipants.Sum(window=>window.StuckSequences),
                 Seconds=workloadSeconds??watch.Elapsed.TotalSeconds,RequestedSeconds=seconds,RoomItems=Pet.Furniture.Count+Pet.ExtraToys.Count,Toys=Pet.AllToys.Count(),Exceptions=exceptions,
                 StuckSequences=participants.Sum(window=>window.StuckSequences),NavigationFailures=navigationFailures,ApproachTimeouts=participants.Sum(window=>window.ApproachTimeouts),
@@ -180,6 +186,6 @@ public partial class MainWindow
             File.WriteAllText(Path.Combine(root,"stress-report.json"),JsonSerializer.Serialize(result,new JsonSerializerOptions{WriteIndented=true}));
         }
         if(participants.Sum(window=>window.StuckSequences)>0)throw new Exception("Stress found stuck sequences; see stress-report.json.");
-        RequestExit();
+        if(exitWhenFinished)RequestExit();
     }
 }

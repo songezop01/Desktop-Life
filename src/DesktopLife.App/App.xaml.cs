@@ -8,9 +8,21 @@ public partial class App : Application
 {
     private FileStream? instanceLock;
     private AppInstanceChannel? instanceChannel;
+    private DiagnosticWorkerSession? diagnosticWorker;
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        try { diagnosticWorker = DiagnosticWorkerSession.FromArguments(e.Args); }
+        catch (Exception ex) { Console.Error.WriteLine("Diagnostic worker rejected: " + ex.Message); Shutdown(2); return; }
+        if (diagnosticWorker is { ProtocolOnly: true } protocol)
+        {
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try { await protocol.RunProtocolOnlyAsync();if(protocol.ProtocolExitDelaySeconds>0)await Task.Delay(TimeSpan.FromSeconds(protocol.ProtocolExitDelaySeconds)); Shutdown(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(2); }
+            }));
+            return;
+        }
         if(e.Args.Contains("--icons-read-test")||e.Args.Contains("--icons-restore-test"))
         {Shutdown(IconIntegrationCheck.Run(e.Args.Contains("--icons-restore-test")));return;}
         var smoke = e.Args.Contains("--smoke-test");
@@ -18,8 +30,10 @@ public partial class App : Application
         var stress=e.Args.Contains("--stress-test");
         var performance=e.Args.Contains("--performance-test");
         var restart=e.Args.Contains("--restart-verify-test");
-        var root = smoke||house||performance||stress ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopLife");
+        var runtimeDiagnosticsTest=e.Args.Contains("--runtime-diagnostics-test");
+        var foodTest=e.Args.Contains("--food-test");
+        var root = diagnosticWorker?.ProfileDirectory ?? (smoke||house||performance||stress||runtimeDiagnosticsTest||foodTest ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopLife"));
         if(restart)
         {
             var argument=e.Args.SingleOrDefault(value=>value.StartsWith("--restart-root=",StringComparison.Ordinal));
@@ -39,10 +53,10 @@ public partial class App : Application
         try
         {
             Directory.CreateDirectory(root);
-            if(smoke||house||stress||performance||restart)File.WriteAllText(Path.Combine(root,"diagnostic-process.json"),System.Text.Json.JsonSerializer.Serialize(new{ProcessId=Environment.ProcessId,StartedUtc=DateTimeOffset.UtcNow,Executable=Environment.ProcessPath,Arguments=e.Args}));
+            if(smoke||house||stress||performance||restart||runtimeDiagnosticsTest||foodTest)File.WriteAllText(Path.Combine(root,"diagnostic-process.json"),System.Text.Json.JsonSerializer.Serialize(new{ProcessId=Environment.ProcessId,StartedUtc=DateTimeOffset.UtcNow,Executable=Environment.ProcessPath,Arguments=e.Args}));
             // Prevent two instances from overwriting the same organism's state.
             try { instanceLock = new FileStream(Path.Combine(root,"instance.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None); }
-            catch(IOException) when(!smoke&&!house&&!performance&&!stress)
+            catch(IOException) when(!smoke&&!house&&!performance&&!stress&&!runtimeDiagnosticsTest&&!foodTest)
             {
                 if(AppInstanceChannel.SendAsync(root,AppInstanceChannel.Command.Activate).GetAwaiter().GetResult())
                 {Shutdown();return;}
@@ -71,13 +85,29 @@ public partial class App : Application
             MainWindow = window;
             if(restart)window.FreezeRestartVerification();
             window.Show();
-            if(!smoke&&!house&&!performance&&!stress&&!restart)
+            if(!smoke&&!house&&!performance&&!stress&&!restart&&!runtimeDiagnosticsTest&&!foodTest)
                 instanceChannel=new AppInstanceChannel(root,command=>Dispatcher.BeginInvoke(new Action(()=>
                 {
                     if(command==AppInstanceChannel.Command.Shutdown)window.RequestExit();
                     else {window.Show();window.WindowState=WindowState.Normal;window.Activate();}
                 })));
             if(smoke||house||performance||stress)window.BeginDiagnostic();
+            if(foodTest)
+            {
+                Dispatcher.BeginInvoke(new Action(async()=>
+                {
+                    try {await window.SmokeFood(root);log.Write("Food interaction components PASS (not elapsed stress).");window.RequestExit();}
+                    catch(Exception ex){log.Write("Food interaction components FAIL: "+ex);Shutdown(2);}
+                }),DispatcherPriority.ApplicationIdle);
+            }
+            if(runtimeDiagnosticsTest)
+            {
+                Dispatcher.BeginInvoke(new Action(async()=>
+                {
+                    try {await window.SmokeRuntimeDiagnostics(root);log.Write("Runtime diagnostics protocol PASS (no stress workload).");window.RequestExit();}
+                    catch(Exception ex){log.Write("Runtime diagnostics protocol FAIL: "+ex);Shutdown(2);}
+                }),DispatcherPriority.ApplicationIdle);
+            }
             if(restart)
             {
                 Dispatcher.BeginInvoke(new Action(async()=>
@@ -140,15 +170,35 @@ public partial class App : Application
             if(stress)
             {
                 var argument=e.Args.FirstOrDefault(a=>a.StartsWith("--stress-seconds=",StringComparison.Ordinal));
-                var duration=argument is not null&&int.TryParse(argument.Split('=')[1],out var parsed)?Math.Clamp(parsed,60,28800):600;
+                var duration=diagnosticWorker?.Seconds??(argument is not null&&int.TryParse(argument.Split('=')[1],out var parsed)?Math.Clamp(parsed,60,28800):600);
                 var presenceArgument=e.Args.FirstOrDefault(a=>a.StartsWith("--stress-presence=",StringComparison.Ordinal));
                 var presenceName=presenceArgument?.Split('=')[1]??"Both";
-                var stressPresence=presenceName.Equals("Both",StringComparison.OrdinalIgnoreCase)?PresenceMode.Both:
+                var stressPresence=diagnosticWorker is not null?PresenceMode.All:presenceName.Equals("Both",StringComparison.OrdinalIgnoreCase)?PresenceMode.Both:
                     presenceName.Equals("All",StringComparison.OrdinalIgnoreCase)?PresenceMode.All:throw new ArgumentException("Stress presence must be Both or All.");
                 var floorArgument=e.Args.FirstOrDefault(a=>a.StartsWith("--stress-floors=",StringComparison.Ordinal));
-                var stressFloors=floorArgument is null?1:int.Parse(floorArgument.Split('=')[1]);
+                var stressFloors=diagnosticWorker?.Floors??(floorArgument is null?1:int.Parse(floorArgument.Split('=')[1]));
                 if(stressFloors is <1 or >3)throw new ArgumentOutOfRangeException("stress-floors");
-                Dispatcher.BeginInvoke(new Action(async()=>{try{await window.RunHomeStress(root,duration,stressPresence,stressFloors);log.Write("Stress PASS: "+stressPresence);}catch(Exception ex){log.Write("Stress FAIL: "+ex);Shutdown(2);}}));
+                Dispatcher.BeginInvoke(new Action(async()=>
+                {
+                    try
+                    {
+                        await window.RunHomeStress(root,duration,stressPresence,stressFloors,diagnosticWorker?.Cancellation??CancellationToken.None,
+                            diagnosticWorker is null?null:(elapsed,characters)=>diagnosticWorker.Progress(elapsed,characters,characters.StartsWith("場景完成；",StringComparison.Ordinal)?"保存及重載核對":"三角色小屋場景"),exitWhenFinished:diagnosticWorker is null);
+                        log.Write("Stress PASS: "+stressPresence);
+                        if(diagnosticWorker is not null){diagnosticWorker.Finish(DiagnosticRunState.Passed);window.RequestExit();}
+                    }
+                    catch(OperationCanceledException) when(diagnosticWorker?.Cancellation.IsCancellationRequested==true)
+                    {
+                        log.Write("Stress STOPPED: requested cancellation; incomplete run is not PASS.");
+                        try
+                        {
+                            if(!await window.SavePetStateAsync())throw new IOException("Stopped diagnostic could not save its isolated profile.");
+                            diagnosticWorker.Finish(DiagnosticRunState.Stopped);window.RequestExit();
+                        }
+                        catch(Exception ex){diagnosticWorker.Finish(DiagnosticRunState.Failed,ex.Message);Shutdown(2);}
+                    }
+                    catch(Exception ex){log.Write("Stress FAIL: "+ex);diagnosticWorker?.Finish(DiagnosticRunState.Failed,ex.Message);Shutdown(2);}
+                }));
             }
             if(house)
             {
@@ -224,9 +274,10 @@ public partial class App : Application
         catch (Exception ex)
         {
             log.Write("Startup failed: " + ex);
+            if(diagnosticWorker is not null){diagnosticWorker.Finish(DiagnosticRunState.Failed,ex.Message);Shutdown(1);return;}
             MessageBox.Show("啟動失敗，請檢查設定與紀錄：\n" + root + "\n" + ex.Message, "Desktop Life");
             Shutdown(1);
         }
     }
-    protected override void OnExit(ExitEventArgs e) { instanceChannel?.Dispose(); instanceLock?.Dispose(); base.OnExit(e); }
+    protected override void OnExit(ExitEventArgs e) { diagnosticWorker?.RecordExit(e.ApplicationExitCode);diagnosticWorker?.Dispose(); instanceChannel?.Dispose(); instanceLock?.Dispose(); base.OnExit(e); }
 }

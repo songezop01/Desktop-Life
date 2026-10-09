@@ -16,6 +16,7 @@ public sealed class HousePersistenceTests:IDisposable
         var expected=ThreeResidents();
         var legacy=JsonNode.Parse(JsonSerializer.Serialize(expected))!;
         legacy["SchemaVersion"]=6;
+        legacy.AsObject().Remove("Food");
         foreach(var learning in new[]{legacy["Learning"]!,legacy["OtherCharacter"]!["Learning"]!,legacy["AdditionalCharacter"]!["Learning"]!})
         {
             var room=learning["Room"]!.AsObject();room.Remove("FloorCount");
@@ -25,7 +26,7 @@ public sealed class HousePersistenceTests:IDisposable
         var store=new OrganismStore(root);Directory.CreateDirectory(root);File.WriteAllText(store.PathName,original);
         var loaded=store.Load();
         Assert.Equal(OrganismSnapshot.CurrentSchemaVersion,loaded.SchemaVersion);
-        Assert.Equal(7,loaded.SchemaVersion);
+        Assert.Empty(loaded.Food.Servings);
         Assert.Equal(JsonSerializer.Serialize(expected),JsonSerializer.Serialize(loaded));
         foreach(var character in Enum.GetValues<PetAppearance>())
         {

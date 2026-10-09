@@ -19,7 +19,7 @@ public sealed class SurfaceDrag
         diagnosticPointer=point;
         try{action();}finally{diagnosticPointer=null;}
     }
-    public SurfaceDrag(Window window,UIElement surface,Action<bool> held,Action<double,double> move,Action<bool> released)
+    public SurfaceDrag(Window window,UIElement surface,Action<bool> held,Action<double,double> move,Action<bool> released,Func<bool>? canStart=null)
     {
         var time=System.Diagnostics.Stopwatch.StartNew();
         Point previous=default;double previousTime=0;
@@ -32,6 +32,7 @@ public sealed class SurfaceDrag
         surface.AddHandler(Mouse.MouseDownEvent,new MouseButtonEventHandler((_,e)=>
         {
             if(e.ChangedButton!=MouseButton.Left)return;
+            if(canStart is not null&&!canStart())return;
             Diagnostic="down";
             var origin=DisplayWorkspace.RoomPosition(window);
             PressPoint=diagnosticPointer is {} local?new Point(local.X-origin.X,local.Y-origin.Y):e.GetPosition(window);

@@ -24,7 +24,8 @@ public partial class MainWindow : Window
     public MainWindow(string dataRoot, AppSettings settings,Action<FrozenOrganismSnapshot>? diagnosticWriter=null)
     {
         InitializeComponent();
-        VersionBanner.Text=$"DESKTOP LIFE  /  陪伴小屋 {typeof(App).Assembly.GetName().Version?.ToString(3)}";
+        var buildVersion=System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(App).Assembly)?.InformationalVersion.Split('+')[0];
+        VersionBanner.Text=$"DESKTOP LIFE  /  陪伴小屋 {buildVersion??typeof(App).Assembly.GetName().Version?.ToString(3)}";
         InitializePerformance();
         InitializeIllustrations();
         organismStore = new OrganismStore(dataRoot);
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
         // Persist the applied offline interval once, so rapid restarts cannot reapply it.
         InitializeLearning(dataRoot,settings with{PetAppearance=checkpoint.Settings.PetAppearance},checkpoint.Learning);
         InitializePresence(checkpoint);
+        InitializeFood(checkpoint);
         if(!SavePetState())throw new IOException("初始狀態無法保存。");
         ShowHomeostasis();
         SettingsText.Text = "本機陪伴與偏好記憶，不連接雲端。真實桌面圖示互動需另外啟用；移動前備份，可一鍵恢復。";
@@ -102,6 +104,7 @@ public partial class MainWindow : Window
         Life.AdvanceCompanion(elapsed-lastLifeTick,Pet.PhysiologicalAction,LatestEnvironment?.IdleSeconds.Value is <300);
         TickCompanion();
         TickOther(Math.Max(0,(elapsed-lastLifeTick).TotalSeconds));
+        TickFood();
         lastLifeTick = elapsed;
         ShowHomeostasis();
         if (!saveClosing&&elapsed - lastSaveTick >= TimeSpan.FromSeconds(60)) QueuePetSave();
