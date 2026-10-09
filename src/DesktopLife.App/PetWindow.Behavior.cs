@@ -42,8 +42,9 @@ public partial class PetWindow
     private BodyAction PlayContactPose=>appearance==PetAppearance.Cat?BodyAction.BatToy:BodyAction.PlayToy;
     public void BeginCare(CareKind kind,BodyAction action)
     {
+        if(CareUnavailableReason(kind) is {} unavailable){ShowCareFeedback(unavailable);return;}
         requestedCare=kind;
-        if(FinishingMotion){sequence?.Interrupt(BehaviorInterruptReason.Care);queuedAction=action;return;}
+        queuedAction=null;requestedActivity=null;requestedToy=null;
         SetAction(action);
     }
     private bool ShowHand=>activeCare==CareKind.Pet&&sequence?.Phase is BehaviorPhase.Accept or BehaviorPhase.React;
@@ -60,6 +61,7 @@ public partial class PetWindow
     public bool RequestAction(BodyAction action,BehaviorInterruptReason reason)
     {
         if(Interacting)return false;
+        if(reason==BehaviorInterruptReason.Stimulus&&activeCare is not null&&sequence is {Finished:false})return false;
         if(sequence is {Finished:false})
         {
             if(!sequence.Interrupt(reason))return false;
@@ -100,7 +102,7 @@ public partial class PetWindow
         playTarget??=AllToys.Where(CanPlayToy).OrderBy(toy=>Math.Abs(toy.Model.X-body.X)).FirstOrDefault();
         if(action==BodyAction.PseudoPushIcon){playTarget=Square;teaserTarget=null;}
         var id=teaserTarget?.Item.Id.ToString()??ToyId(playTarget??Ball);
-        if(toyInterest.Attraction(id,0)<=0)
+        if(activeCare!=CareKind.Play&&toyInterest.Attraction(id,0)<=0)
         {
             teaserTarget=null;
             playTarget=AllToys.Where(t=>CanPlayToy(t)&&toyInterest.Attraction(ToyId(t),0)>0).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();

@@ -2,10 +2,12 @@ param([string]$OutputDirectory, [switch]$SkipArchive)
 $ErrorActionPreference='Stop'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'
 $root=Split-Path $PSScriptRoot -Parent
+. "$PSScriptRoot/release-verification.ps1"
+$version=Get-DesktopLifeReleaseVersion $root
 $dotnet=& "$PSScriptRoot/dotnet-path.ps1"
 Push-Location $root
 try {
-    $buildId='0.11.0-'+(Get-Date -Format 'yyyyMMdd-HHmmss')
+    $buildId=$version+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss')
     if(!$OutputDirectory){$OutputDirectory=Join-Path $root "artifacts/standalone/$buildId"}
     $outputPath=[IO.Path]::GetFullPath($OutputDirectory)
     if(Test-Path -LiteralPath (Join-Path $outputPath 'DesktopLife.exe')){throw 'Choose a new output directory; published builds are immutable.'}
@@ -19,8 +21,8 @@ try {
     Copy-Item -LiteralPath docs/UPDATE_05.md,docs/SOUND_PACKS.md,docs/UPDATE_06.md,docs/UPDATE_08.md,docs/UPDATE_08_1.md,docs/CHARACTER_CAPABILITIES.md,docs/INDIVIDUALITY_08_WORKLOG.md,docs/UPDATE_07.md,docs/HOME_07_WORKLOG.md,docs/CHARACTER_ART_PIPELINE.md,docs/CURRENT_PRODUCT_DIRECTION.md,docs/VERIFICATION_WORKFLOW.md -Destination $docs
     Copy-Item -LiteralPath docs/UPDATE_09.md,docs/UPDATE_010.md,docs/UPGRADE_ROADMAP.md,docs/ART_DIRECTION_010.md,docs/ISSUES_010.md -Destination $docs
     Copy-Item -LiteralPath docs/UPDATE_0101.md,docs/INSTALLATION_0101.md,docs/ISSUES_0101.md -Destination $docs
-    Copy-Item -LiteralPath docs/UPDATE_011.md,docs/DESIGN_011.md -Destination $docs
-    $manifest=[ordered]@{Version='0.11.0';Build=$buildId;Executable=(Join-Path $outputPath 'DesktopLife.exe');Sha256=(Get-FileHash -LiteralPath (Join-Path $outputPath 'DesktopLife.exe') -Algorithm SHA256).Hash;Architecture='win-x64';SelfContained=$true;SingleFile=$true}
+    Copy-Item -LiteralPath docs/UPDATE_011.md,docs/UPDATE_0111.md,docs/DESIGN_011.md,docs/DESIGN_012.md -Destination $docs
+    $manifest=[ordered]@{Version=$version;Build=$buildId;Executable=(Join-Path $outputPath 'DesktopLife.exe');Sha256=(Get-FileHash -LiteralPath (Join-Path $outputPath 'DesktopLife.exe') -Algorithm SHA256).Hash;Architecture='win-x64';SelfContained=$true;SingleFile=$true}
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputPath 'release.json') -Encoding UTF8
     $index=Join-Path $root 'artifacts/standalone'
     New-Item -ItemType Directory -Force $index | Out-Null

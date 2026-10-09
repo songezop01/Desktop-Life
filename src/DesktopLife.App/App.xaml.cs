@@ -191,6 +191,7 @@ public partial class App : Application
                         if (window.Life.TotalRuntimeSeconds < 3 || window.Life.Feeding.Level is null || window.Life.State == new PetState())
                             throw new Exception("Homeostasis did not advance from live samples.");
                         window.SmokeIllustrations(root);
+                        await window.SmokeDiagnosticsPanel(root);
                         window.SmokeCompanion();
                         await Task.Delay(600);
                         if (!window.SavePetState() || !window.VerifyPetSave()) throw new Exception("PetState save/load mismatch.");
@@ -204,6 +205,7 @@ public partial class App : Application
                         window.SmokeGenerative(Path.Combine(root,"generative-check.png"));
                         window.SmokeIdentity(root);
                         await window.SmokeDualPresence();
+                        await window.SmokeCareMenus(root);
                         window.SmokeCharacterLife(root);
                         await window.SmokeBackgroundSaving(root);
                         window.RenderCompanionPanel(Path.Combine(root,"companion-panel.png"));

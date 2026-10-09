@@ -1,8 +1,10 @@
 ﻿param([string]$OutputDirectory)
 $ErrorActionPreference='Stop'
 . "$PSScriptRoot/deployment-transaction.ps1"
+. "$PSScriptRoot/release-verification.ps1"
 $root=Split-Path $PSScriptRoot -Parent
-if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('artifacts/verification/0.10.1/deployment-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))}
+$version=Get-DesktopLifeReleaseVersion $root
+if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('artifacts/verification/'+$version+'/deployment-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))}
 $output=[IO.Path]::GetFullPath($OutputDirectory)
 if(Test-Path -LiteralPath $output){throw 'Choose a new isolated test output directory.'}
 New-Item -ItemType Directory -Path $output -Force | Out-Null
@@ -209,6 +211,8 @@ foreach($fault in @('AfterExecutableCopy','AfterReleaseMove','AfterShortcut:0','
 }
 Invoke-TestCase 'real-installer-commit' {Invoke-RealInstallerCase 'real-installer-commit' ''}
 Invoke-TestCase 'real-installer-0.11-commit' {Invoke-RealInstallerCase 'real-installer-0.11-commit' '' '0.11.0'}
+Invoke-TestCase 'real-installer-0.11.1-commit' {Invoke-RealInstallerCase 'real-installer-0.11.1-commit' '' '0.11.1'}
+Invoke-TestCase 'real-installer-0.11.1-compensation' {Invoke-RealInstallerCase 'real-installer-0.11.1-compensation' 'AfterInstallationManifest' '0.11.1'}
 function Invoke-RestartGuardCase([string]$Name,[scriptblock]$Arrange,[string]$ExpectedState,[bool]$ShouldLaunch){
     $fixture=New-Fixture $Name
     $installRoot=Split-Path $fixture.Metadata[0] -Parent
@@ -254,7 +258,7 @@ Invoke-TestCase 'guard-missing-verified-build-no-launch' {Invoke-RestartGuardCas
 Invoke-TestCase 'guard-launch-failure-retains-upgrade-failure' {Invoke-RestartGuardCase 'guard-launch-failure-retains-upgrade-failure' {$state['InjectLaunchFailure']=$true;$state.Failure='Original backup copy failure'} 'RESTART_FAILED' $false}
 Invoke-TestCase 'guard-outside-install-root-no-launch' {Invoke-RestartGuardCase 'guard-outside-install-root-no-launch' {$state.PreviousExecutable=Join-Path $output 'outside/DesktopLife.exe'} 'RESTART_FAILED' $false}
 $failed=@($results | Where-Object {!$_.Passed})
-$summary=[ordered]@{Version='0.11.0';Runtime=$PSVersionTable.PSVersion.ToString();Passed=$failed.Count -eq 0;Cases=$results.Count;Failures=$failed.Count;Directory=$output;CompletedUtc=[DateTime]::UtcNow;Results=$results.ToArray()}
+$summary=[ordered]@{Version=$version;Runtime=$PSVersionTable.PSVersion.ToString();Passed=$failed.Count -eq 0;Cases=$results.Count;Failures=$failed.Count;Directory=$output;CompletedUtc=[DateTime]::UtcNow;Results=$results.ToArray()}
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'deployment-test-summary.json') -Encoding UTF8
 Write-Output ('Deployment cases: '+$results.Count+'. Failures: '+$failed.Count+'. Evidence: '+$output)
 if($failed.Count -gt 0){throw 'Isolated deployment transaction tests failed.'}

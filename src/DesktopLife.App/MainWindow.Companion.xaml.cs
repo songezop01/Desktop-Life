@@ -16,9 +16,10 @@ public partial class MainWindow
     }
     private void Care(CareKind kind)
     {
-        if(Pet.Interacting){CareStatus.Text="等你把牠放下，再照顧牠吧。";return;}
+        if(Pet.CareUnavailableReason(kind) is {} unavailable){CareStatus.Text=unavailable;Pet.ShowCareFeedback(unavailable);return;}
         var result=CompanionCare.Apply(Life.State,Learning.State.Companion,kind,DateTimeOffset.UtcNow,remember:false);
         CareStatus.Text=result.Accepted?CharacterCapability.CareDescription(kind,settings.PetAppearance):result.Message;
+        Pet.ShowCareFeedback(CareStatus.Text);
         if(settings.PetAppearance==PetAppearance.Girl)Pet.Say(result.Accepted?kind==CareKind.Pet?"謝謝你陪著我。":kind==CareKind.Groom?"整理好了，舒服多了。":result.Message:result.Message,5);
         if(!result.Accepted)return;
         Life.ApplyCare(result.State);RecordCareEvidence(kind);

@@ -79,6 +79,7 @@ public partial class PetWindow : Window, IAnimationController
             sequence=null;queuedAction=null;requestedCare=null;activeCare=null;homeTarget=null;feline.Clip=null;CancelRoute();
         }
         this.appearance=appearance;
+        RefreshCareMenuLabels();
         sprite.SetCharacter(appearance);
         ApplyCharacterGeometry();
         SpeechBubble.Visibility=Visibility.Collapsed;
@@ -122,8 +123,9 @@ public partial class PetWindow : Window, IAnimationController
             moved=>{if(!moved){interactionUntil=0;Hit?.Invoke(RewardButton.Left);}else {petGravity.VX=drag!.VelocityX*.4;petGravity.VY=drag.VelocityY;body.Action=BodyAction.Fall;ApplyPose();}});
         var menu=new ContextMenu();
         foreach(var (label,kind) in new[]{("餵飯飯",CareKind.Feed),("摸摸頭",CareKind.Pet),("一起玩球",CareKind.Play),("梳理毛毛",CareKind.Groom),("哄牠睡覺",CareKind.Rest)})
-        {var item=new MenuItem{Header=label};item.Click+=(_,_)=>CareRequested?.Invoke(kind);menu.Items.Add(item);}
+        {var item=new MenuItem{Header=label,Tag=kind};item.Click+=(_,_)=>CareRequested?.Invoke(kind);menu.Items.Add(item);}
         Character.ContextMenu=menu;
+        RefreshCareMenuLabels();
         ResetPosition();
         timer.Tick += Tick;
         IsVisibleChanged += (_,_) => {
@@ -155,8 +157,8 @@ public partial class PetWindow : Window, IAnimationController
         teaserTarget=null;teaserPawTarget=null;
         if(action==BodyAction.PlayToy)
         {
-            playTarget=AllToys.Where(t=>t!=Square&&CanPlayToy(t)).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();
-            if(++playSession%2==1&&appearance==PetAppearance.Cat)teaserTarget=Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Item.X-body.X)).FirstOrDefault();
+            playTarget=requestedCare==CareKind.Play?AvailableCareToy():AllToys.Where(t=>t!=Square&&CanPlayToy(t)).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();
+            if(requestedCare!=CareKind.Play&&++playSession%2==1&&appearance==PetAppearance.Cat)teaserTarget=Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Item.X-body.X)).FirstOrDefault();
             lastTeaserTap=clock.Elapsed.TotalSeconds;
         }
         ChooseTarget();

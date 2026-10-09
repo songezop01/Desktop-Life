@@ -87,8 +87,11 @@ public partial class MainWindow
     private void CareSelected(CareKind kind)
     {
         if(!PresencePolicy.Includes(CurrentPresence,careTarget)){CareStatus.Text="請先顯示要照顧的角色。";return;}
+        // Choosing a care action finishes furniture placement for the whole room.
+        // The normal checkbox handler updates every resident immediately.
+        if(EditRoom.IsChecked==true)EditRoom.IsChecked=false;
         if(RuntimeFor(careTarget) is {} character)
-        {CareStatus.Text=character.Care(kind,out var accepted);if(accepted)SetPaused(false);ShowCompanion();ShowHomeostasis();QueuePetSave();return;}
+        {CareStatus.Text=character.Care(kind,out var accepted);character.Window.ShowCareFeedback(CareStatus.Text);if(accepted)SetPaused(false);ShowCompanion();ShowHomeostasis();QueuePetSave();return;}
         Care(kind);
     }
     private void TickOther(double dt)

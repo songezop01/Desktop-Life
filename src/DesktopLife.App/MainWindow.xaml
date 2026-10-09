@@ -272,7 +272,7 @@
                                 <DataTemplate>
                                     <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding Name}"/>
-                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Value}" Height="7" VerticalAlignment="Center" Foreground="{StaticResource RoseBrush}" Background="{StaticResource RoseSoftBrush}" BorderThickness="0"/>
+                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Value, Mode=OneWay}" Height="7" VerticalAlignment="Center" Foreground="{StaticResource RoseBrush}" Background="{StaticResource RoseSoftBrush}" BorderThickness="0"/>
                                         <TextBlock Grid.Column="2" Text="{Binding Value, StringFormat={}{0:F2}}" HorizontalAlignment="Right" Foreground="{StaticResource LavenderBrush}"/>
                                     </Grid>
                                 </DataTemplate>

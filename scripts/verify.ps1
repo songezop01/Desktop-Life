@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 . "$PSScriptRoot/release-verification.ps1"
+$version=Get-DesktopLifeReleaseVersion $root
 $base=Join-Path $root 'artifacts/verification'
 if(!$Worker){
     $RunDirectory=Join-Path $base ('runs/'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))
@@ -42,7 +43,7 @@ if(!$git -and $runtimePaths.git -and (Test-Path -LiteralPath $runtimePaths.git))
 if(!$git){$knownGit=@('C:\Program Files\Git\cmd\git.exe','C:\Program Files\Git\bin\git.exe')|Where-Object Test-Path|Select-Object -First 1;if($knownGit){$git=[pscustomobject]@{Source=$knownGit}}}
 $branch='unavailable';$commit='unavailable';$dirty=$false
 if($git){$branch=& $git.Source -C $root branch --show-current;$commit=& $git.Source -C $root rev-parse HEAD;$dirty=[bool](& $git.Source -C $root status --porcelain)}
-$report=[ordered]@{Version='0.11.0';Branch=$branch;Commit=$commit;Dirty=$dirty;Mode=$Mode;StartedUtc=$start;DurationSeconds=0;Conclusion='RUNNING';SourceSealed=$false;Stages=[ordered]@{};Warnings=@();RunDirectory=$RunDirectory}
+$report=[ordered]@{Version=$version;Branch=$branch;Commit=$commit;Dirty=$dirty;Mode=$Mode;StartedUtc=$start;DurationSeconds=0;Conclusion='RUNNING';SourceSealed=$false;Stages=[ordered]@{};Warnings=@();RunDirectory=$RunDirectory}
 $report['SourceHashes']=@(Get-DesktopLifeSourceInventory $root)
 foreach($stage in @('Build','Tests','Analyzer','Deployment','WpfSmoke','HouseMixedDpi','Identity','Longitudinal','ShortStress','Soak','DualPresence')){$report.Stages[$stage]='NOT RUN'}
 function Publish-Summary {

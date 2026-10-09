@@ -8,13 +8,16 @@ try{
     if($NativeResult){Start-Transcript -Path ($NativeResult+'.log') -Force|Out-Null}
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
+$version=Get-DesktopLifeReleaseVersion $root
+if($version -notmatch '^0\.11\.'){throw 'This upgrade entry point is restricted to the 0.11 release series.'}
+$verificationMode=Get-DesktopLifeReleaseVerificationMode $version
 $summary=Get-Content -LiteralPath (Join-Path $VerificationDirectory 'verification-summary.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-DesktopLifeVerificationEvidence $summary $root $VerificationDirectory
 function Verify-SourceInventory {
     Assert-DesktopLifeSourceInventory $summary.SourceHashes $root
 }
 Verify-SourceInventory
-$run=Join-Path $root ('artifacts/installation/0.11.0-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+$run=Join-Path $root ('artifacts/installation/'+$version+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $run | Out-Null
 $installRoot=Join-Path $env:LOCALAPPDATA 'Programs/DesktopLife'
 New-Item -ItemType Directory -Force $installRoot | Out-Null
@@ -45,7 +48,7 @@ try{
     & "$PSScriptRoot/publish.ps1" -SkipArchive
     Verify-SourceInventory
     $release=Get-Content -LiteralPath (Join-Path $root 'artifacts/standalone/latest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if($release.Version -ne '0.11.0'){throw 'Unexpected release version.'}
+    if($release.Version -ne $version){throw 'Unexpected release version.'}
     $upgradeState.Phase='SMOKE'
     Invoke-Isolated $release.Executable '--house-test' 120000
     Invoke-Isolated $release.Executable '--smoke-test' 90000
@@ -71,7 +74,7 @@ try{
     # A relaunch after safe shutdown must not write into a partially copied/restored profile.
     $dataLock=[IO.File]::Open((Join-Path $data 'instance.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     $upgradeState.Phase='BACKING_UP'
-    $backup=Join-Path $data ('upgrade-backups/before-0.11.0-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $backup=Join-Path $data ('upgrade-backups/before-'+$version+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $backup | Out-Null
     Get-ChildItem -LiteralPath $data -Force | Where-Object {$_.Name -notin @('upgrade-backups','instance.lock')} | ForEach-Object {Copy-Item -LiteralPath $_.FullName -Destination $backup -Recurse -Force}
     $hashes=@(Get-ChildItem -LiteralPath $backup -Recurse -File -Force | ForEach-Object {
@@ -82,10 +85,10 @@ try{
         [ordered]@{Path=$relative;Sha256=$sha}
     })
     $expectedInstalledExe=Join-Path (Join-Path $installRoot $release.Build) 'DesktopLife.exe'
-    $record=[ordered]@{DataDirectory=$data;Backup=$backup;BackupHashes=$hashes;PreviousInstallation=$previous;PreviousExecutableSha256=$previousHash;NewExecutable=$expectedInstalledExe;NewSha256=$release.Sha256;VerificationDirectory=$VerificationDirectory;CreatedUtc=[DateTime]::UtcNow;State='BACKED_UP'}
+    $record=[ordered]@{Version=$version;VerificationMode=$verificationMode;DataDirectory=$data;Backup=$backup;BackupHashes=$hashes;PreviousInstallation=$previous;PreviousExecutableSha256=$previousHash;NewExecutable=$expectedInstalledExe;NewSha256=$release.Sha256;VerificationDirectory=$VerificationDirectory;CreatedUtc=[DateTime]::UtcNow;State='BACKED_UP'}
     $recordPath=Join-Path $run 'upgrade-record.json'
     $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $recordPath -Encoding UTF8
-    $recovery=Join-Path $root ('artifacts/recovery/0.11.0-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $recovery=Join-Path $root ('artifacts/recovery/'+$version+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
     $upgradeState.Phase='PREPARING_RECOVERY'
     New-Item -ItemType Directory -Force $recovery | Out-Null
     Copy-Item -LiteralPath $recordPath -Destination $recovery

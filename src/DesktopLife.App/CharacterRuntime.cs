@@ -80,7 +80,7 @@ public sealed class CharacterRuntime
     public string Care(CareKind kind,out bool accepted)
     {
         accepted=false;
-        if(Window.Interacting)return "請先把角色放下。";
+        if(Window.CareUnavailableReason(kind) is {} unavailable)return unavailable;
         var now=DateTimeOffset.UtcNow;var result=CompanionCare.Apply(Life.State,Learning.State.Companion,kind,now,false);
         if(!result.Accepted)return result.Message;
         accepted=true;

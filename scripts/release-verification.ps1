@@ -1,3 +1,22 @@
+function Get-DesktopLifeReleaseVersion([string]$ProjectRoot){
+    [xml]$project=Get-Content -LiteralPath (Join-Path $ProjectRoot 'src/DesktopLife.App/DesktopLife.App.csproj') -Raw -Encoding UTF8
+    $versions=@($project.Project.PropertyGroup.Version|Where-Object {$_}|Select-Object -Unique)
+    if($versions.Count -ne 1 -or $versions[0] -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'){
+        throw 'The application must declare one stable major.minor.patch Version.'
+    }
+    $version=[string]$versions[0]
+    foreach($name in @('AssemblyVersion','FileVersion')){
+        $values=@($project.Project.PropertyGroup.$name|Where-Object {$_}|Select-Object -Unique)
+        if($values.Count -ne 1 -or $values[0] -ne ($version+'.0')){throw "$name must match the release Version."}
+    }
+    $version
+}
+function Get-DesktopLifeReleaseVerificationMode([string]$Version){
+    if($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'){throw 'A stable release Version is required to select the verification policy.'}
+    # A new minor series retains the Full release gate. Same-series patches
+    # default to Standard, so an installation never silently starts a long soak.
+    if($Matches[3] -eq '0'){'Full'}else{'Standard'}
+}
 function Get-DesktopLifeSourceInventory([string]$ProjectRoot){
     $extensions=@('.cs','.xaml','.csproj','.ps1','.psm1','.psd1','.py','.png','.ico','.json','.manifest','.props','.targets','.resx','.config','.svg','.jpg','.jpeg','.webp','.wav','.mp3','.otf','.ttf','.cmd','.bat')
     $prefixLength=$ProjectRoot.TrimEnd('\','/').Length+1
@@ -57,8 +76,12 @@ function Assert-DesktopLifeStressEvidence($BuildHashes,[string]$RunDirectory,[Va
     if($analysis.Conclusion -ne 'PASS' -or $restart.Succeeded -ne $true -or $stress.DurableReloadVerification.Succeeded -ne $true){throw "$Label analysis, durable reload, or process restart did not pass."}
     if($binary.AppAssemblySha256 -ne $appHash -or $binary.CoreAssemblySha256 -ne $coreHash){throw "$Label tested different application binaries."}
 }
-function Assert-DesktopLifeVerificationEvidence($Summary,[string]$ProjectRoot,[string]$RunDirectory,[ValidateSet('Standard','Full')][string]$Mode='Full'){
-    if($Summary.Version -ne '0.11.0' -or $Summary.Conclusion -ne 'PASS' -or $Summary.Mode -ne $Mode){throw "A passing 0.11.0 $Mode verification is required."}
+function Assert-DesktopLifeVerificationEvidence($Summary,[string]$ProjectRoot,[string]$RunDirectory,[ValidateSet('Standard','Full')][string]$Mode){
+    $version=Get-DesktopLifeReleaseVersion $ProjectRoot
+    $requiredMode=Get-DesktopLifeReleaseVerificationMode $version
+    if(!$Mode){$Mode=$requiredMode}
+    if($requiredMode -eq 'Full' -and $Mode -ne 'Full'){throw "The $version initial minor release requires Full verification."}
+    if($Summary.Version -ne $version -or $Summary.Conclusion -ne 'PASS' -or $Summary.Mode -ne $Mode){throw "A passing $version $Mode verification is required."}
     if($Summary.SourceSealed -ne $true){throw 'Verification did not seal its source and build after testing.'}
     $required=@('Build','Tests','Analyzer','Deployment','WpfSmoke','HouseMixedDpi','Identity','Longitudinal','ShortStress','DualPresence')
     if($Mode -eq 'Full'){$required+='Soak'}
