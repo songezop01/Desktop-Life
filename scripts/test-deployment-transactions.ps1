@@ -5,9 +5,19 @@ $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $version=Get-DesktopLifeReleaseVersion $root
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('artifacts/verification/'+$version+'/deployment-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))}
-$output=[IO.Path]::GetFullPath($OutputDirectory)
-if(Test-Path -LiteralPath $output){throw 'Choose a new isolated test output directory.'}
+$evidenceDirectory=[IO.Path]::GetFullPath($OutputDirectory)
+if(Test-Path -LiteralPath $evidenceDirectory){throw 'Choose a new isolated test output directory.'}
+New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+# Native Windows PowerShell 5.1 cannot use the long worktree/raw path as an
+# artificial installation root. Keep the same real installer/rollback cases
+# under a fresh short TEMP/GUID root, retaining every fixture and its inventory.
+# Do not copy the nested fixtures back into the long evidence directory: that
+# would reproduce the same path limitation while trying to preserve a failure.
+$fixtureId=[guid]::NewGuid().ToString('N')
+$output=Join-Path (Join-Path ([IO.Path]::GetTempPath()) 'DLDep') $fixtureId
+if(Test-Path -LiteralPath $output){throw 'Isolated deployment fixture root already exists.'}
 New-Item -ItemType Directory -Path $output -Force | Out-Null
+[ordered]@{FixtureId=$fixtureId;FixtureRoot=$output;EvidenceDirectory=$evidenceDirectory;Runtime=$PSVersionTable.PSVersion.ToString();ProcessId=$PID;Retained=$true;Scope='Synthetic installer and rollback fixtures only; no application executable is launched and no production installation/profile is used.'} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidenceDirectory 'fixture-location.json') -Encoding UTF8
 $results=New-Object 'System.Collections.Generic.List[object]'
 
 function Assert-Test([bool]$Condition,[string]$Message){if(!$Condition){throw $Message}}
@@ -129,7 +139,7 @@ Invoke-TestCase 'persistent-metadata-lock-preserves-recovery' {
                 throw 'Persistent file lock injected.'
             }
         }catch{$caught=$_.Exception}
-        Assert-Test ($caught.Data['DesktopLifeCompensation'] -eq 'COMPENSATION_FAILED') 'A persistent lock must not be called a successful compensation.'
+        Assert-Test ($caught.Data['DesktopLifeCompensation'] -eq 'COMPENSATION_FAILED') ('A persistent lock must not be called a successful compensation. Actual failure: '+$caught.Message)
         Assert-Test ($caught.Message.Contains('verified original snapshot')) 'Failure omitted the usable recovery location.'
         $journal=Get-Content -LiteralPath (Join-Path $transaction 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         Assert-Test ($journal.State -eq 'COMPENSATION_FAILED') 'Journal omitted incomplete compensation.'
@@ -186,7 +196,7 @@ function Invoke-RealInstallerCase([string]$Name,[string]$Fault,[string]$Version=
     try{$installedExe=Install-DesktopLifeReleaseFiles -ReleaseDirectory $release -InstallRoot $installRoot -ShortcutDirectories $directories -Probe $probe}catch{$caught=$_.Exception}
     Assert-Test ((Get-ActiveFingerprint $fixture.Data) -eq $fixture.Fingerprint) 'The real installer changed user data.'
     if($Fault){
-        Assert-Test ($caught -and $caught.Data['DesktopLifeCompensation'] -eq 'COMPENSATED') 'The real installer did not compensate an interruption.'
+        Assert-Test ($caught -and $caught.Data['DesktopLifeCompensation'] -eq 'COMPENSATED') ('The real installer did not compensate an interruption. Actual failure: '+$caught.Message)
         Assert-Test ((Get-MetadataFingerprint $fixture.Metadata) -eq $expected) 'The real installer did not restore prior shortcut and manifest bytes.'
         $transaction=@(Get-ChildItem -LiteralPath (Join-Path $installRoot 'installation-transactions') -Directory)[0].FullName
         $journal=Get-Content -LiteralPath (Join-Path $transaction 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -258,7 +268,12 @@ Invoke-TestCase 'guard-missing-verified-build-no-launch' {Invoke-RestartGuardCas
 Invoke-TestCase 'guard-launch-failure-retains-upgrade-failure' {Invoke-RestartGuardCase 'guard-launch-failure-retains-upgrade-failure' {$state['InjectLaunchFailure']=$true;$state.Failure='Original backup copy failure'} 'RESTART_FAILED' $false}
 Invoke-TestCase 'guard-outside-install-root-no-launch' {Invoke-RestartGuardCase 'guard-outside-install-root-no-launch' {$state.PreviousExecutable=Join-Path $output 'outside/DesktopLife.exe'} 'RESTART_FAILED' $false}
 $failed=@($results | Where-Object {!$_.Passed})
-$summary=[ordered]@{Version=$version;Runtime=$PSVersionTable.PSVersion.ToString();Passed=$failed.Count -eq 0;Cases=$results.Count;Failures=$failed.Count;Directory=$output;CompletedUtc=[DateTime]::UtcNow;Results=$results.ToArray()}
-$summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'deployment-test-summary.json') -Encoding UTF8
-Write-Output ('Deployment cases: '+$results.Count+'. Failures: '+$failed.Count+'. Evidence: '+$output)
+$fixtureInventory=@(Get-DesktopLifeTreeInventory $output)
+$fixtureDirectories=@(Get-ChildItem -LiteralPath $output -Directory -Recurse -Force | ForEach-Object {$_.FullName.Substring($output.Length+1)} | Sort-Object)
+$fixtureEvidence=[ordered]@{FixtureId=$fixtureId;FixtureRoot=$output;Retained=$true;Files=$fixtureInventory;Directories=$fixtureDirectories}
+$fixtureEvidencePath=Join-Path $evidenceDirectory 'fixture-evidence.json'
+$fixtureEvidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $fixtureEvidencePath -Encoding UTF8
+$summary=[ordered]@{Version=$version;Runtime=$PSVersionTable.PSVersion.ToString();Passed=$failed.Count -eq 0;Cases=$results.Count;Failures=$failed.Count;Directory=$evidenceDirectory;FixtureRoot=$output;FixtureEvidence=$fixtureEvidencePath;FixtureEvidenceSha256=(Get-FileHash -LiteralPath $fixtureEvidencePath -Algorithm SHA256).Hash;CompletedUtc=[DateTime]::UtcNow;Results=$results.ToArray()}
+$summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidenceDirectory 'deployment-test-summary.json') -Encoding UTF8
+Write-Output ('Deployment cases: '+$results.Count+'. Failures: '+$failed.Count+'. Evidence: '+$evidenceDirectory+'. Retained fixtures: '+$output)
 if($failed.Count -gt 0){throw 'Isolated deployment transaction tests failed.'}
