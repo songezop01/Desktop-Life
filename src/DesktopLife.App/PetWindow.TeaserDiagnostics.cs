@@ -17,25 +17,51 @@ public partial class PetWindow
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
         void Case(string name) => cases.Add(new { Case = name, Passed = true });
         void Save(BitmapSource bitmap, string path) { var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap)); using var stream = File.Create(path); png.Save(stream); }
+        var originalDisplay=DisplayWorkspace.Active;
         SetSimulationEnabled(false); ConfigureHouse(1, false); Show();
         var bounds = Bounds(); var floor = House!.Floors[0]; var scale = House.SceneScale;
         AddRoomItem(new(Guid.NewGuid(), FurnitureKind.CatTree, bounds.Left + bounds.Width * .42, floor.Y - 230 * scale));
         var tree = Furniture.Single(); tree.SetEditing(false); tree.Show();
         try
         {
-            foreach (var kind in new[] { PetAppearance.Cat, PetAppearance.BorderCollie })
+            foreach (var (kind,compact) in new[] { (PetAppearance.Cat,false), (PetAppearance.BorderCollie,false), (PetAppearance.BorderCollie,true) })
             {
+                if(compact)
+                {
+                    // Reproduce the mixed-scene floor / size geometry without
+                    // inferring a native monitor or phone FPS from this fixture.
+                    var display=new RoomDisplay("teaser-compact-regression","Synthetic compact room",0,new(0,0,1536,816),1.25,false)
+                    {Adapter="synthetic",PixelBounds=new(0,0,1920,1080),PixelWorkArea=new(0,0,1920,1020)};
+                    DisplayWorkspace.Select(display.Id,[display]);ConfigureHouse(3,false);
+                    bounds=Bounds();floor=House!.Floors[1];scale=House.SceneScale;
+                    tree.SetFloor(1);tree.Relocate(bounds.Left+bounds.Width*.62,floor.Y-tree.Height);
+                }
+                var scenario=kind+(compact?"-compact-upper-floor":"");
                 SetAppearance(kind); PrepareCareMenuDiagnostic(0); SetPaused(false); SetRoomEditing(false);
                 // The fixture reuses one HWND for two independently profiled
                 // residents. Retire the previous resident's toy-interest cooldown.
                 toyInterest.Step(30);
                 Check(TryTeaserStance(tree, out var stance), $"{kind} has no physically reachable hanging toy stance.");
+                if(compact)
+                {
+                    Check(tree.Item.FloorIndex==1&&House!.FloorCount==3&&scale<1,"Compact upper-floor regression lost its real room geometry.");
+                    var anchorPoint=tree.TeaserAnchorPosition;var anchor=new RoomPoint(anchorPoint.X,anchorPoint.Y);
+                    var previous=HangingToyInteraction.Plan(kind,anchor,tree.Platforms[1],floor.Platform,bounds,BodyWidth,BodyHeight,scale);
+                    Check(previous is not null&&previous.RopeLength==HangingToy.MaximumLength,"Regression did not reproduce the former maximum-string stance.");
+                    var bodyScale=BodyHeight/144;
+                    Check(!GetTeaserContactSilhouette()!.IsSphereClear(new((anchor.X-previous!.X)/bodyScale,
+                        (anchor.Y+previous.RopeLength*scale-previous.Y)/bodyScale),HangingToyInteraction.ContactRadius*scale/bodyScale),
+                        "Regression did not reproduce the occluded future play sphere.");
+                    Check(stance.RopeLength<previous.RopeLength&&!stance.UsesShelf&&stance.Support==floor.Platform,
+                        "Visible compact plan changed the floor support or failed to adjust the physical string.");
+                    Case("dog-compact-upper-floor-rejects-occluded-string-plan");
+                }
                 body.Place(stance.X + 50 * scale, floor.Y - BodyHeight, bounds); StepPetGravity(.016);
                 var before = TeaserContactCount;
                 Check(TryStartTeaserActivity(tree), $"{kind} did not bind the clicked hanging toy.");
                 Check(AttentionTarget == tree.Item.Id.ToString(), "Clicked teaser selected an unrelated floor ball.");
                 Check(PhysiologicalAction != BodyAction.PlayToy, "Merely noticing the hanging toy granted play benefit.");
-                Case($"{kind}-clicked-target-bound-without-early-benefit");
+                Case($"{scenario}-clicked-target-bound-without-early-benefit");
                 for (var frame = 0; frame < 1800 && TeaserContactCount == before; frame++)
                 {
                     if (watch.Elapsed.TotalSeconds > 6) throw new Exception("Shared teaser checks exceeded their six second native budget.");
@@ -73,7 +99,8 @@ public partial class PetWindow
                         "A layer hid or changed the illustrated paw at the actual composited contact endpoint.");
                     Check(Math.Abs((endpoint-localBall).Length-ballRadius)<=.25*scale/bodyScale,
                         "The composited paw endpoint did not reach the displayed sphere circumference.");
-                    contactsEvidence.Add(new{Resident=kind.ToString(),SphereFullyVisible=true,FutureFacingClearance=true,
+                    contactsEvidence.Add(new{Resident=kind.ToString(),Scenario=scenario,CompactUpperFloor=compact,Floor=tree.Item.FloorIndex,
+                        SceneScale=scale,RopeLength=tree.Teaser!.RopeLength,SphereFullyVisible=true,FutureFacingClearance=true,
                         CompositePawVisible=true,ContactFrame=sprite.PresentedFrameIndex,OverlappingSpritePixels=overlappingPixels,LocalBall=localBall,PawTip=endpoint,
                         BallRadius=ballRadius,ReachLength=(endpoint-new Point(endpoint.X<58?43:73,113)).Length});
                     Check(PhysiologicalAction == BodyAction.PlayToy && phaseContact && sequence?.Phase == BehaviorPhase.Contact, "Actual hanging toy contact did not permit play benefit.");
@@ -95,24 +122,24 @@ public partial class PetWindow
                         drawing.Pop();
                     }
                     var capture = new RenderTargetBitmap(600, 520, 96, 96, PixelFormats.Pbgra32); capture.Render(visual);
-                    Save(capture, Path.Combine(directory, $"teaser-{kind}-contact.png"));
+                    Save(capture, Path.Combine(directory, $"teaser-{scenario}-contact.png"));
                 }
                 Check(TeaserContactCount == before + 1, $"{kind} could not walk to and physically touch the hanging toy.");
-                Case($"{kind}-illustrated-physical-contact-and-real-support");
+                Case($"{scenario}-illustrated-physical-contact-and-real-support");
                 var contacts = TeaserContactCount;
                 var unreachable = new RoomPoint(tree.TeaserPosition.X, body.Y - 30);
                 Check(HangingToyInteraction.ContactPoint(kind, unreachable, body.X, body.Y, BodyHeight, scale) is null &&
                     !ApplyTeaserContact(tree, null, 1) && TeaserContactCount == contacts, "An unreachable ball granted pretend contact.");
-                Case($"{kind}-unreachable-contact-rejected");
+                Case($"{scenario}-unreachable-contact-rejected");
                 EndSequence(); teaserTarget = null;
                 Check(tree.Teaser!.TargetLength == HangingToy.Length, "Cancellation did not retract the shared toy string.");
                 for (var i = 0; i < 200; i++) tree.StepTeaser(.016);
                 Check(tree.Teaser.RopeLength == HangingToy.Length, "The string did not visibly return after play.");
-                Case($"{kind}-cancelled-string-restored");
+                Case($"{scenario}-cancelled-string-restored");
                 Check(TryStartTeaserActivity(tree) && AttentionTarget == tree.Item.Id.ToString(), "A repeated explicit toy click was replaced by an autonomous cooldown target.");
                 Check(TeaserContactCount == contacts && !phaseContact, "Clicking during cooldown invented another contact.");
                 EndSequence(); teaserTarget = null;
-                Case($"{kind}-explicit-replay-binds-target-without-new-contact");
+                Case($"{scenario}-explicit-replay-binds-target-without-new-contact");
             }
             SetAppearance(PetAppearance.Girl); PrepareCareMenuDiagnostic(0);
             Check(!TryStartTeaserActivity(tree), "The girl accepted a pet-only hanging toy."); Case("girl-is-not-a-pet-toy-resident");
@@ -125,6 +152,10 @@ public partial class PetWindow
             Check(watch.Elapsed.TotalSeconds <= 6, "Shared teaser checks exceeded their six second native budget.");
             File.WriteAllText(Path.Combine(directory, "shared-teaser-report.json"), JsonSerializer.Serialize(new { Status = "PASS", Gate = "Component checks only", WallSeconds = watch.Elapsed.TotalSeconds, Contacts=contactsEvidence, Cases = cases }, new JsonSerializerOptions { WriteIndented = true }));
         }
-        finally { RestoreTeaserLength(); teaserTarget = null; sequence = null; }
+        finally
+        {
+            RestoreTeaserLength(); teaserTarget = null; sequence = null;
+            DisplayWorkspace.Select(originalDisplay.Id,[originalDisplay]);
+        }
     }
 }

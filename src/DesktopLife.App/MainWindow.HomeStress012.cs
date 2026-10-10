@@ -7,6 +7,7 @@ namespace DesktopLife.App;
 
 public partial class MainWindow
 {
+    private enum HomeStress012Input { Hover,Comb,Teaser }
     private sealed class HomeStress012Resident(PetAppearance kind,PetWindow actor)
     {
         internal readonly PetAppearance Kind=kind;
@@ -21,14 +22,17 @@ public partial class MainWindow
         internal int GroomContacts=>Actor.DirectGroomContacts-InitialGroom;
         internal int TeaserContacts=>Actor.TeaserContactCount-InitialTeaser;
         internal Guid? FoodReservationSeen;
+        internal HomeStress012Input? PendingInput;
+        internal int PendingInputDeadline,NextProbeSecond=20,RepeatInputIndex;
+        internal int PendingInitialContacts,PendingInitialCancellations;
+        internal bool PendingBusyReported,PendingIsRepeat;
         internal readonly Dictionary<string,int> Skips=[];
         internal void Skip(string reason){InputUnavailable++;Skips[reason]=Skips.GetValueOrDefault(reason)+1;}
     }
     private sealed class HomeStress012Evidence
     {
         internal readonly Dictionary<PetAppearance,HomeStress012Resident> Residents=[];
-        internal HomeStress012Resident? PendingInput;
-        internal int PendingInputDeadline;
+        internal int InputCursor;
         internal readonly List<object> InitialStock=[];
         internal readonly List<string> Violations=[];
         internal int ViolationCount,BowlPortionsConsumed,TablePortionsConsumed,RefillRequests,AcceptedRefills,
@@ -98,12 +102,19 @@ public partial class MainWindow
             {resident.AutomaticFoodStarts++;resident.FoodReservationSeen=token;}
             if(resident.Actor.HomeStressDogUsesFurniturePlatform)evidence.Fail("Dog stood on a cat-tree platform during hanging-toy play.");
         }
+        var firstFoodCoverageComplete=evidence.Residents.Values.All(r=>r.AcceptedBites>0&&r.AutomaticFoodStarts>0);
+        var activeFoodReservation=evidence.Residents.Values.Any(r=>r.Actor.HomeStressFoodReservationToken is not null);
         if(second%10==5)
         {
             foreach(var surface in Pet.Furniture.Where(f=>f.IsFoodSurface).ToArray())
             {
                 var before=food.Find(surface.Item.Id);
-                if(before is not {RemainingPortions:0}&&!(second%120==115&&before is {Revision:>0}))continue;
+                // Empty stock still needs the ordinary routed refill. A periodic
+                // partial refill must not replace the serving under a resident's
+                // first real approach, or the workload would starve its own food
+                // coverage before reaching the container.
+                if(before is not {RemainingPortions:0}&&!(second%120==115&&before is {Revision:>0}&&
+                    firstFoodCoverageComplete&&!activeFoodReservation))continue;
                 evidence.RefillRequests++;
                 surface.ChooseFoodDiagnostic(before!.Kind);
                 var after=food.Find(surface.Item.Id);
@@ -116,43 +127,97 @@ public partial class MainWindow
         }
         if(second<20||userHidden||aiPaused||Pet.EditingRoom)return;
         var residents=evidence.Residents.Values.OrderBy(r=>r.Kind).ToArray();
-        if(evidence.PendingInput is null&&second%10!=9)return;
-        var residentToProbe=evidence.PendingInput??residents[((second-29)/10+residents.Length)%residents.Length];
-        var actor=residentToProbe.Actor;
-        if(actor.HomeStressTeaserActive||!actor.HomeStressInputReady)
+        // A pending resident never owns the whole input queue. Poll every safe
+        // boundary each second and let another ready resident use this turn.
+        // The logical cursor is independent of how long a route or probe took.
+        var firstCoveragePending=MissingHomeStress012Coverage(evidence).Length>0;
+        var start=evidence.InputCursor%residents.Length;
+        for(var offset=0;offset<residents.Length;offset++)
         {
-            if(evidence.PendingInput is null)
+            var index=(start+offset)%residents.Length;
+            var resident=residents[index];var actor=resident.Actor;
+            // Do not put care or toy requests ahead of this resident's first
+            // automatic, physically consumed portion. Needs, navigation and the
+            // ordinary food timer continue; no input deadline or busy counter is
+            // started while this prerequisite is still pending.
+            if(resident.AcceptedBites<1||resident.AutomaticFoodStarts<1)continue;
+            if(resident.PendingInput is {} completed&&HomeStress012PendingComplete(resident,completed))
             {
-                residentToProbe.Skip("busy-hidden-stairs-or-transition");
-                evidence.PendingInput=residentToProbe;evidence.PendingInputDeadline=second+30;
+                CompleteHomeStress012Input(evidence,resident,index,residents.Length,second);
             }
-            // Observe the safe boundary every second instead of missing its
-            // brief idle window until this resident's next 30-second turn.
-            if(second>=evidence.PendingInputDeadline){evidence.PendingInput=null;return;}
-            if(!actor.HomeStressTeaserActive)actor.RequestHomeStressIdle();
+            if(resident.PendingInput is not null&&second>=resident.PendingInputDeadline)
+            {
+                resident.Skip("safe-input-boundary-timeout");resident.PendingInput=null;
+                resident.PendingBusyReported=false;resident.NextProbeSecond=second+1;
+                evidence.InputCursor=(index+1)%residents.Length;
+                continue;
+            }
+            if(second<resident.NextProbeSecond)continue;
+            if(resident.PendingInput is null)
+            {
+                var missing=MissingHomeStress012Input(resident);
+                if(missing is null&&firstCoveragePending)continue;
+                resident.PendingInput=missing??(HomeStress012Input)(resident.RepeatInputIndex%
+                    (HangingToyInteraction.Allowed(resident.Kind)?3:2));
+                resident.PendingInputDeadline=second+30;resident.PendingBusyReported=false;
+                resident.PendingIsRepeat=missing is null;
+                resident.PendingInitialContacts=HomeStress012Contacts(resident,resident.PendingInput.Value);
+                resident.PendingInitialCancellations=HomeStress012Cancellations(resident,resident.PendingInput.Value);
+            }
+            if(actor.HomeStressTeaserActive||!actor.HomeStressInputReady)
+            {
+                if(!resident.PendingBusyReported)
+                {resident.Skip("busy-hidden-stairs-or-transition");resident.PendingBusyReported=true;}
+                if(!actor.HomeStressTeaserActive)actor.RequestHomeStressIdle();
+                continue;
+            }
+            var input=resident.PendingInput.Value;
+            if(input is HomeStress012Input.Hover or HomeStress012Input.Comb)
+                await ProbeHomeStress012Input(evidence,resident,input==HomeStress012Input.Comb,cancellation);
+            else
+            {
+                // This is a production activity request. Full routed ball input
+                // is covered by the direct interaction component separately.
+                var surface=Pet.Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Item.X-actor.Position.X)).FirstOrDefault();
+                resident.TeaserRequests++;actor.RequestHomeStressIdle();await Task.Delay(80,cancellation);
+                if(surface is not null&&actor.TryStartTeaserActivity(surface))resident.TeaserStarts++;
+                else resident.Skip("hanging-toy-unavailable");
+            }
+            if(HomeStress012PendingComplete(resident,input))
+                CompleteHomeStress012Input(evidence,resident,index,residents.Length,second);
+            else resident.NextProbeSecond=second+10;
+            // At most one ready input probe is run per real scene second. Its
+            // existing native contact duration and brief elevation stay bounded.
             return;
         }
-        evidence.PendingInput=null;
-        // Three bounded probes per resident: one real head stroke, one comb drag,
-        // and a production hanging-toy activity request. Routed ball input is
-        // covered separately by the direct interaction component. Rotate the
-        // repeat type so long runs also repeat captured comb release/cancel.
-        var repeated=second%120>=90;
-        var repeatMode=(second/120+Array.IndexOf(residents,residentToProbe))%
-            (HangingToyInteraction.Allowed(residentToProbe.Kind)?3:2);
-        if(residentToProbe.PetContacts==0||residentToProbe.HoverCancellations==0||(repeated&&repeatMode==0))
-            await ProbeHomeStress012Input(evidence,residentToProbe,false,cancellation);
-        else if(residentToProbe.GroomContacts==0||residentToProbe.CombCancellations==0||(repeated&&repeatMode==1))
-            await ProbeHomeStress012Input(evidence,residentToProbe,true,cancellation);
-        else if(HangingToyInteraction.Allowed(residentToProbe.Kind)&&
-            (residentToProbe.TeaserContacts==0||second%120>=60))
+    }
+
+    private static HomeStress012Input? MissingHomeStress012Input(HomeStress012Resident resident)
+        =>!HomeStress012InputCovered(resident,HomeStress012Input.Hover)?HomeStress012Input.Hover:
+            !HomeStress012InputCovered(resident,HomeStress012Input.Comb)?HomeStress012Input.Comb:
+            HangingToyInteraction.Allowed(resident.Kind)&&!HomeStress012InputCovered(resident,HomeStress012Input.Teaser)?HomeStress012Input.Teaser:null;
+    private static bool HomeStress012InputCovered(HomeStress012Resident resident,HomeStress012Input input)
+        =>input switch
         {
-            var surface=Pet.Furniture.Where(f=>f.Teaser is not null).OrderBy(f=>Math.Abs(f.Item.X-actor.Position.X)).FirstOrDefault();
-            residentToProbe.TeaserRequests++;
-            actor.RequestHomeStressIdle();await Task.Delay(80,cancellation);
-            if(surface is not null&&actor.TryStartTeaserActivity(surface))residentToProbe.TeaserStarts++;
-            else residentToProbe.Skip("hanging-toy-unavailable");
-        }
+            HomeStress012Input.Hover=>resident.PetContacts>0&&resident.HoverCancellations>0,
+            HomeStress012Input.Comb=>resident.GroomContacts>0&&resident.CombCancellations>0,
+            _=>resident.TeaserContacts>0
+        };
+    private static int HomeStress012Contacts(HomeStress012Resident resident,HomeStress012Input input)
+        =>input switch{HomeStress012Input.Hover=>resident.PetContacts,HomeStress012Input.Comb=>resident.GroomContacts,_=>resident.TeaserContacts};
+    private static int HomeStress012Cancellations(HomeStress012Resident resident,HomeStress012Input input)
+        =>input switch{HomeStress012Input.Hover=>resident.HoverCancellations,HomeStress012Input.Comb=>resident.CombCancellations,_=>0};
+    private static bool HomeStress012PendingComplete(HomeStress012Resident resident,HomeStress012Input input)
+        =>HomeStress012InputCovered(resident,input)&&(!resident.PendingIsRepeat||
+            HomeStress012Contacts(resident,input)>resident.PendingInitialContacts&&
+            (input==HomeStress012Input.Teaser||HomeStress012Cancellations(resident,input)>resident.PendingInitialCancellations));
+    private static void CompleteHomeStress012Input(HomeStress012Evidence evidence,HomeStress012Resident resident,int index,int count,int second)
+    {
+        resident.PendingInput=null;resident.PendingBusyReported=false;
+        if(MissingHomeStress012Input(resident) is null)
+        {resident.NextProbeSecond=second+120;resident.RepeatInputIndex++;}
+        else resident.NextProbeSecond=second+1;
+        evidence.InputCursor=(index+1)%count;
     }
 
     private async Task ProbeHomeStress012Input(HomeStress012Evidence evidence,HomeStress012Resident resident,bool grooming,CancellationToken cancellation)
@@ -233,6 +298,8 @@ public partial class MainWindow
     private static object CaptureHomeStress012(HomeStress012Evidence e)=>new
     {
         Version="0.12",Scope="Participating residents; synthetic routed input with production wall-clock contact gates",
+        InputScheduling="Per-resident initial automatic bite precedes diagnostic input; logical round-robin polls ready boundaries once per scene second; first coverage precedes repeats",
+        PartialRefillScheduling="After all residents' initial automatic bites and with no active food reservation; empty-container refills remain enabled",
         AllResidentCoverage=e.Residents.Count==Enum.GetValues<PetAppearance>().Length,
         InitialHunger=75,InitialHungerAssignmentsPerResident=1,InitialHungerAssignmentCount=e.Residents.Count,InitialStock=e.InitialStock.ToArray(),
         PeriodicNeedResets=0,SyntheticRewardCalls=0,
@@ -243,7 +310,9 @@ public partial class MainWindow
         {
             r.FoodContacts,r.AcceptedBites,r.AutomaticFoodStarts,r.PetContacts,r.GroomContacts,r.TeaserContacts,
             r.HoverAttempts,r.CombAttempts,r.HoverCancellations,r.CombCancellations,r.TeaserRequests,r.TeaserStarts,
+            WaitingForInitialAutomaticFood=r.AcceptedBites<1||r.AutomaticFoodStarts<1,
             r.InputUnavailable,r.InputMisses,Skips=new Dictionary<string,int>(r.Skips)
+            ,TeaserState=r.Actor.HomeStressTeaserDiagnostic
         })
     };
     private static void EndHomeStress012(HomeStress012Evidence evidence)

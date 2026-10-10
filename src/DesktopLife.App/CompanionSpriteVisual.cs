@@ -130,7 +130,10 @@ public sealed class CompanionSpriteVisual : FrameworkElement
     private double walkDistance;
     private double? presentedWalkCycle;
     private (double Width,double Height,double Dpi)? footRasterGeometry;
-    private readonly (double Scale,(Point? Left,Point? Right) Feet)?[] renderedFootCache=new (double,(Point?,Point?))?[16];
+    private readonly (double Scale,WalkRasterCalibration Calibration)?[] renderedFootCache=new (double,WalkRasterCalibration)?[16];
+    private bool calibratingRasterFoot;
+    private long rasterCalibrationCount;
+    private double rasterCalibrationTotalMilliseconds,rasterCalibrationMaxMilliseconds;
     internal void SetPresentedFacing(double? direction,bool hold=false)
     {
         presentedFacing=direction is {} value?value<0?-1:1:null;
@@ -145,6 +148,38 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         var next=(width,height,dpiScale);if(footRasterGeometry==next)return;
         footRasterGeometry=next;Array.Clear(renderedFootCache);
     }
+    private WalkRasterCalibration CalibrateActualWalkVisual(int index,double drawScale,double width,double height,double dpi,bool facingRight)
+    {
+        // Scene owns this visual on one dispatcher thread. Capture another pose
+        // synchronously without presenting it or changing distance/navigation;
+        // finally restore the current frame before control reaches Rendering.
+        if(calibratingRasterFoot)throw new InvalidOperationException("Raster foot calibration must not reenter scene presentation.");
+        using var processing=Dispatcher.DisableProcessing();
+        var started=System.Diagnostics.Stopwatch.GetTimestamp();calibratingRasterFoot=true;
+        var savedFrame=frame;var savedScale=scale;var savedDrawn=drawn;var savedWalking=walking;
+        var savedX=poseTransform.ScaleX;var savedY=poseTransform.ScaleY;
+        var savedTransition=transitionRemaining;var savedReversed=transitionReversed;var savedEndpoint=endpoint;
+        var savedCycle=presentedWalkCycle;var savedDistance=walkDistance;
+        try
+        {
+            frame=index;scale=drawScale;poseTransform.ScaleX=facingRight?1:-1;poseTransform.ScaleY=1;
+            UpdateBounds();InvalidateVisual();UpdateLayout();
+            return walkAtlas!.RenderedFeet(index,scale,width,height,dpi,facingRight,this);
+        }
+        finally
+        {
+            frame=savedFrame;scale=savedScale;drawn=savedDrawn;walking=savedWalking;poseTransform.ScaleX=savedX;poseTransform.ScaleY=savedY;
+            transitionRemaining=savedTransition;transitionReversed=savedReversed;endpoint=savedEndpoint;presentedWalkCycle=savedCycle;walkDistance=savedDistance;
+            try{InvalidateVisual();UpdateLayout();}
+            finally
+            {
+                calibratingRasterFoot=false;
+                var elapsed=System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                rasterCalibrationCount++;rasterCalibrationTotalMilliseconds+=elapsed;
+                rasterCalibrationMaxMilliseconds=Math.Max(rasterCalibrationMaxMilliseconds,elapsed);
+            }
+        }
+    }
     private Point? RasterLocalFoot(int index,StairFootSide side,double drawScale,double facingScale)
     {
         if(walkAtlas is null)return null;
@@ -152,8 +187,8 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         {
             var right=facingScale>=0;var slot=index+(right?0:8);var entry=renderedFootCache[slot];
             if(entry is null||Math.Abs(entry.Value.Scale-drawScale)>1e-10)
-                renderedFootCache[slot]=entry=(drawScale,walkAtlas.RenderedFeet(index,drawScale,geometry.Width,geometry.Height,geometry.Dpi,right));
-            var point=side==StairFootSide.Left?entry.Value.Feet.Left:entry.Value.Feet.Right;
+                renderedFootCache[slot]=entry=(drawScale,CalibrateActualWalkVisual(index,drawScale,geometry.Width,geometry.Height,geometry.Dpi,right));
+            var point=side==StairFootSide.Left?entry.Value.Calibration.Feet.Left:entry.Value.Calibration.Feet.Right;
             // The cache contains the actual full negative-facing raster. Undo
             // only that full mirror here; the current turn scale is applied by
             // callers, so its limit remains continuous through edge-on.
@@ -162,8 +197,19 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         var foot=walkAtlas.Foot(index,side);if(foot is null)return null;
         var pose=walkAtlas.Frames[index];return new((116-pose.Width*drawScale)/2+(foot.Value.X+.5)*drawScale,144-pose.Height*drawScale+(foot.Value.Y+.5)*drawScale);
     }
-    internal object RasterFootDiagnostic=>new{walking,Frame=frame,TransitionActive,FacingScale=poseTransform.ScaleX,
-        DrawScale=scale,PresentedFacing=presentedFacing,Geometry=footRasterGeometry,HasSourceLeft=walkAtlas?.Foot(frame,StairFootSide.Left)is not null,HasSourceRight=walkAtlas?.Foot(frame,StairFootSide.Right)is not null};
+    internal bool RasterFacingRight=>poseTransform.ScaleX>=0;
+    private Point? PresentedRasterFoot(StairFootSide side)
+    {
+        if(!walking||walkAtlas is null||TransitionActive)return null;
+        var foot=RasterLocalFoot(frame,side,scale,poseTransform.ScaleX);
+        return foot is {} point?new Point(58+(point.X-58)*poseTransform.ScaleX,144+(point.Y-144)*poseTransform.ScaleY):null;
+    }
+    internal object RasterFootDiagnostic=>new{walking,Frame=frame,TransitionActive,FacingScale=poseTransform.ScaleX,FacingScaleY=poseTransform.ScaleY,
+        DrawScale=scale,PresentedFacing=presentedFacing,Geometry=footRasterGeometry is {} geometry?new{geometry.Width,geometry.Height,geometry.Dpi}:null,
+        DrawnRect=drawn,CalibratedCanonicalLeft=PresentedRasterFoot(StairFootSide.Left),CalibratedCanonicalRight=PresentedRasterFoot(StairFootSide.Right),
+        CachedRender=renderedFootCache[frame+(poseTransform.ScaleX>=0?0:8)]?.Calibration.Evidence,
+        CalibrationTiming=new{CacheMissCount=rasterCalibrationCount,TotalMilliseconds=rasterCalibrationTotalMilliseconds,MaxMilliseconds=rasterCalibrationMaxMilliseconds,Capacity=renderedFootCache.Length},
+        HasSourceLeft=walkAtlas?.Foot(frame,StairFootSide.Left)is not null,HasSourceRight=walkAtlas?.Foot(frame,StairFootSide.Right)is not null};
     internal void AdvancePresentationForDiagnostic(double elapsed)
     {
         if(!double.IsFinite(elapsed)||elapsed<0||elapsed>.05)throw new ArgumentOutOfRangeException(nameof(elapsed));

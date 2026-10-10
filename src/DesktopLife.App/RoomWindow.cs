@@ -37,6 +37,7 @@ public sealed partial class RoomWindow : Window
     private readonly Ellipse teaserBall = new() { Width = 18, Height = 18, Fill = new SolidColorBrush(Color.FromRgb(214,155,125)), Stroke = Brushes.Bisque, StrokeThickness = 1, IsHitTestVisible = false };
     public double SceneScale {get;private set;}=1;
     private Point TeaserAnchor {get{var size=Size(Item.Kind);return FurnitureArt.LoadedCount>0?FurnitureArt.Contact(Item.Kind,70,126,size.Width,size.Height):new Point(45,31);}}
+    internal Point TeaserAnchorPosition {get{var anchor=TeaserAnchor;return new(Item.X+anchor.X*SceneScale,Item.Y+anchor.Y*SceneScale);}}
     public Point TeaserPosition {get{var anchor=TeaserAnchor;return new(Item.X+(anchor.X+(Teaser?.X??0))*SceneScale,Item.Y+(anchor.Y+(Teaser?.Y??0))*SceneScale);}}
     public RoomWindow(RoomItem item)
     {

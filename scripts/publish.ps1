@@ -21,7 +21,7 @@ try {
     Copy-Item -LiteralPath docs/UPDATE_05.md,docs/SOUND_PACKS.md,docs/UPDATE_06.md,docs/UPDATE_08.md,docs/UPDATE_08_1.md,docs/CHARACTER_CAPABILITIES.md,docs/INDIVIDUALITY_08_WORKLOG.md,docs/UPDATE_07.md,docs/HOME_07_WORKLOG.md,docs/CHARACTER_ART_PIPELINE.md,docs/CURRENT_PRODUCT_DIRECTION.md,docs/VERIFICATION_WORKFLOW.md -Destination $docs
     Copy-Item -LiteralPath docs/UPDATE_09.md,docs/UPDATE_010.md,docs/UPGRADE_ROADMAP.md,docs/ART_DIRECTION_010.md,docs/ISSUES_010.md -Destination $docs
     Copy-Item -LiteralPath docs/UPDATE_0101.md,docs/INSTALLATION_0101.md,docs/ISSUES_0101.md -Destination $docs
-    Copy-Item -LiteralPath docs/UPDATE_011.md,docs/UPDATE_0111.md,docs/DESIGN_011.md,docs/DESIGN_012.md -Destination $docs
+    Copy-Item -LiteralPath docs/UPDATE_011.md,docs/UPDATE_0111.md,docs/DESIGN_011.md,docs/DESIGN_012.md,docs/UPDATE_012.md,docs/DEVELOPMENT_012.md -Destination $docs
     $manifest=[ordered]@{Version=$version;Build=$buildId;Executable=(Join-Path $outputPath 'DesktopLife.exe');Sha256=(Get-FileHash -LiteralPath (Join-Path $outputPath 'DesktopLife.exe') -Algorithm SHA256).Hash;Architecture='win-x64';SelfContained=$true;SingleFile=$true}
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputPath 'release.json') -Encoding UTF8
     $index=Join-Path $root 'artifacts/standalone'

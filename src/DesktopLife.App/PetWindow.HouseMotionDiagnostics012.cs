@@ -41,7 +41,7 @@ public partial class PetWindow
         public bool Passed => Completed && Failures.Count == 0;
     }
     private sealed record Motion012Image(BitmapSource Bitmap, string Label, Point? ActualFoot, Point? ExpectedFoot);
-    private sealed record Motion012Raster(BitmapSource Image, Point? ActualFootPixels, Point ExpectedFootPixels, double ErrorDip, bool ActualFootPainted);
+    private sealed record Motion012Raster(BitmapSource Image, Point? ActualFootPixels, Point ExpectedFootPixels, double ErrorDip, bool ActualFootPainted, object CalibrationEvidence);
     private readonly record struct Motion012Sample(Point Origin, RoomPoint Model, int Frame, StairStepPose? Stair, string? Connector, NavigationPhase Phase);
 
     /// <summary>Ten-second component check; synthetic raster DPI is separate from real HWND/Rendering evidence.</summary>
@@ -182,9 +182,16 @@ public partial class PetWindow
                                 if (sampled.Count >= 16 || !sampled.Add(sampleKey)) return;
                                 var raster = MeasureMotionRaster(actor, pose.PlantPoint, scale);
                                 result.RasterContactSamples++; result.MaxRasterContactErrorDip = Math.Max(result.MaxRasterContactErrorDip, raster.ErrorDip);
+                                string? rasterPng=null;
+                                if(raster.ErrorDip>2)
+                                {
+                                    rasterPng=$"raster-{result.Case}-to{activeDestination}-frame{currentFrame}-step{pose.StepIndex}.png";
+                                    WriteMotionRaster(Path.Combine(full,rasterPng),raster.Image);
+                                }
                                 result.Contacts.Add(new { Frame = currentFrame, pose.StepIndex, pose.StepProgress, pose.PlantSide, pose.PlantWeight,
                                     ExpectedWorldFoot = pose.PlantPoint, RasterFootPixels = raster.ActualFootPixels, raster.ErrorDip, raster.ActualFootPainted,
-                                    PresentedOrigin = origin, Scope = "Actual WPF offscreen raster at synthetic requested DPI and production presented origin; not an HWND route or monitor FPS" });
+                                    PresentedOrigin = origin, RasterCalibration = raster.CalibrationEvidence, RasterPngFile=rasterPng,
+                                    Scope = "Actual WPF offscreen raster at synthetic requested DPI and production presented origin; not an HWND route or monitor FPS" });
                                 if (!raster.ActualFootPainted) result.Failures.Add("The selected stance contact is not a solid pixel in the independently rendered sprite.");
                                 if (images.Count < 24 && (sampled.Count <= 2 || raster.ErrorDip > 2))
                                     images.Add(new(raster.Image, $"{result.Character} {floors}F {scale:P0} ->{activeDestination} frame {currentFrame} error {raster.ErrorDip:F2}", raster.ActualFootPixels, raster.ExpectedFootPixels));
@@ -412,7 +419,21 @@ public partial class PetWindow
         { var y = group.Max(point => point.Y); var sole = group.Where(point => point.Y >= y - 1).ToArray(); return sole[sole.Length / 2]; }).ToArray();
         Point? actual = candidates.Length == 0 ? null : candidates.OrderBy(point => MotionDistance(point, expectedPixel)).First();
         var error = actual is {} found ? MotionDistance(found, expectedPixel) / scale : 1000000;
-        return new(image, actual, expectedPixel, error, actual is not null);
+        var alpha=new byte[image.PixelWidth*image.PixelHeight];for(var i=0;i<alpha.Length;i++)alpha[i]=pixels[i*4+3];
+        var calibrated=CompanionWalkAtlas.CalibrateRenderedAlpha(alpha,image.PixelWidth,image.PixelHeight,actor.appearance!=PetAppearance.Girl,actor.sprite.RasterFacingRight);
+        // Run the production scan on this same independently painted image to
+        // distinguish a raster/filter mismatch from a sole-cluster policy mismatch.
+        // It is evidence only; the independent candidate still decides the gate.
+        Point? PixelCenter(Point? point)=>point is {} value?new Point(value.X+.5,value.Y+.5):null;
+        var evidence=new{Sprite=actor.sprite.RasterFootDiagnostic,MeasuredRasterCalibration=new{LeftPixelCenter=PixelCenter(calibrated.Left),RightPixelCenter=PixelCenter(calibrated.Right)},
+            IndependentSoleCandidates=candidates,ExpectedLocalPixel=expectedPixel,
+            MeasuredAlphaSha256=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(alpha))};
+        return new(image, actual, expectedPixel, error, actual is not null,evidence);
+    }
+    private static void WriteMotionRaster(string path,BitmapSource image)
+    {
+        var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));
+        using var stream=File.Create(path);encoder.Save(stream);
     }
     private static void WriteMotionSheet(string path, IReadOnlyList<Motion012Image> frames)
     {

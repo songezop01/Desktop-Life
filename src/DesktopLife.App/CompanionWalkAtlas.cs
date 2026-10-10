@@ -24,6 +24,8 @@ internal sealed class WalkClip
     public int[][] Frames { get; set; } = [];
 }
 
+internal sealed record WalkRasterCalibration((Point? Left,Point? Right) Feet,object Evidence);
+
 internal sealed class CompanionWalkAtlas
 {
     private static readonly Dictionary<PetAppearance, CompanionWalkAtlas?> cache = [];
@@ -51,37 +53,40 @@ internal sealed class CompanionWalkAtlas
         var referenceTarget = kind == PetAppearance.Girl ? 144 : 110;
         Scale = Math.Min(referenceTarget / (clip.ReferenceHeight * sheet.DecodeScale), 112d / Frames.Max(f => f.Width));
     }
-    internal (Point? Left,Point? Right) RenderedFeet(int frameIndex,double drawScale,double bodyWidth,double bodyHeight,double dpiScale,bool facingRight)
+    internal WalkRasterCalibration RenderedFeet(int frameIndex,double drawScale,double bodyWidth,double bodyHeight,double dpiScale,bool facingRight,Visual canonicalSource)
     {
         // Source-pixel sole centers can move several pixels after the final WPF
         // filter, especially on a curved slipper at fractional DPI. Calibrate
         // that real output once per pose/geometry, not an ideal foot marker.
         var width=(int)Math.Ceiling(bodyWidth*dpiScale);var height=(int)Math.Ceiling(bodyHeight*dpiScale);
-        if(width<1||height<1||(long)width*height>4_000_000)return(null,null);
-        var frame=Frames[frameIndex];var canonical=new DrawingVisual();RenderOptions.SetBitmapScalingMode(canonical,BitmapScalingMode.HighQuality);
-        using(var dc=canonical.RenderOpen())
-        {
-            if(!facingRight)dc.PushTransform(new ScaleTransform(-1,1,58,144));
-            dc.DrawImage(frame.Image,new Rect((116-frame.Width*drawScale)/2,
-                144-frame.Height*drawScale,frame.Width*drawScale,frame.Height*drawScale));
-            if(!facingRight)dc.Pop();
-        }
-        // Use the production canonical visual -> absolute VisualBrush -> final
-        // body/DPI path. Directly enlarging the source bitmap is a different WPF
-        // filtering path and shifts a curved slipper's solid sole center.
+        if(width<1||height<1||(long)width*height>4_000_000)return new((null,null),new{InvalidGeometry=true});
+        // Calibrate the actual FrameworkElement visual. A reconstructed
+        // DrawingVisual has different WPF visual bounds/filtering at fractional
+        // DPI, even with the same source bitmap and canonical drawing rectangle.
         var drawing=new DrawingVisual();RenderOptions.SetBitmapScalingMode(drawing,BitmapScalingMode.HighQuality);
         using(var dc=drawing.RenderOpen())
-            dc.DrawRectangle(new VisualBrush(canonical){ViewboxUnits=BrushMappingMode.Absolute,
+            dc.DrawRectangle(new VisualBrush(canonicalSource){ViewboxUnits=BrushMappingMode.Absolute,
                 Viewbox=new Rect(0,0,116,144),Stretch=Stretch.Fill,AlignmentX=AlignmentX.Left,AlignmentY=AlignmentY.Top},
                 null,new Rect(0,0,bodyWidth,bodyHeight));
         var image=new RenderTargetBitmap(width,height,96*dpiScale,96*dpiScale,PixelFormats.Pbgra32);image.Render(drawing);
         var pixels=new byte[width*height*4];image.CopyPixels(pixels,width*4,0);
         var alpha=new byte[width*height];for(var i=0;i<alpha.Length;i++)alpha[i]=pixels[i*4+3];
+        var calibrated=CalibrateRenderedAlpha(alpha,width,height,quadruped,facingRight);
+        Point? Canonical(Point? point)=>point is {} value?new Point((value.X+.5)/dpiScale*116/bodyWidth,(value.Y+.5)/dpiScale*144/bodyHeight):null;
+        var sourceDpi=VisualTreeHelper.GetDpi(canonicalSource);
+        return new((Canonical(calibrated.Left),Canonical(calibrated.Right)),new
+        {
+            Frame=frameIndex,DrawScale=drawScale,FacingRight=facingRight,BodyWidth=bodyWidth,BodyHeight=bodyHeight,RequestedDpiScale=dpiScale,
+            ActualCanonicalVisual=true,SourceVisualBounds=VisualTreeHelper.GetDescendantBounds(canonicalSource),
+            SourceDpiX=sourceDpi.DpiScaleX,SourceDpiY=sourceDpi.DpiScaleY,
+            AlphaSha256=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(alpha))
+        });
+    }
+    internal static (Point? Left,Point? Right) CalibrateRenderedAlpha(byte[] alpha,int width,int height,bool quadruped,bool facingRight)
+    {
         var calibrated=CalibrateAlpha(alpha,width,height,quadruped,facingRight);
         // Keep source/anatomical phase labels when the screen order reverses.
-        if(!facingRight)calibrated=(calibrated.Right,calibrated.Left);
-        Point? Canonical(Point? point)=>point is {} value?new Point((value.X+.5)/dpiScale*116/bodyWidth,(value.Y+.5)/dpiScale*144/bodyHeight):null;
-        return(Canonical(calibrated.Left),Canonical(calibrated.Right));
+        return facingRight?calibrated:(calibrated.Right,calibrated.Left);
     }
     private static (Point? Left,Point? Right) CalibrateFeet(SpriteAssetFrame frame,bool quadruped)
         =>CalibrateAlpha(frame.Alpha,frame.Width,frame.Height,quadruped);

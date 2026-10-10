@@ -8,7 +8,8 @@ public static class HangingToyInteraction
     public static bool Allowed(PetAppearance character) => character is PetAppearance.Cat or PetAppearance.BorderCollie;
 
     public static HangingToyStance? Plan(PetAppearance character, RoomPoint anchor, RoomPlatform lowerShelf,
-        RoomPlatform floor, BodyBounds bounds, double bodyWidth, double bodyHeight, double sceneScale)
+        RoomPlatform floor, BodyBounds bounds, double bodyWidth, double bodyHeight, double sceneScale,
+        HangingToySilhouette? contactSilhouette = null)
     {
         if (!Allowed(character)) return null;
         if (new[] { anchor.X, anchor.Y, bodyWidth, bodyHeight, sceneScale }.Any(v => !double.IsFinite(v)) || bodyWidth <= 0 || bodyHeight <= 0 || sceneScale <= 0)
@@ -17,10 +18,17 @@ public static class HangingToyInteraction
         var support = character == PetAppearance.Cat ? lowerShelf : floor;
         if (support.Width <= 0 || Math.Abs(support.Y - support.EndY) > .001) return null;
         var feet = support.Y;
-        var ropeLength = character == PetAppearance.Cat ? HangingToy.Length :
+        var preferredLength = character == PetAppearance.Cat ? HangingToy.Length :
             Math.Clamp((feet - bodyHeight * .12 - anchor.Y) / sceneScale, HangingToy.Length, HangingToy.MaximumLength);
         // Stay beside the string and within the real support. Choosing the other
         // side near a screen edge changes facing, not the character's capability.
+        // A compact room can put the maximum-length ball beside a different
+        // part of the illustrated dog. Use the same future-pose silhouette as
+        // contact, and shorten the real string only to a reachable, visible
+        // sphere. The original cat string and all physical limits stay fixed.
+        var minimumLength = contactSilhouette is not null && character == PetAppearance.BorderCollie
+            ? HangingToy.Length : preferredLength;
+        for (var ropeLength = preferredLength; ropeLength >= minimumLength; ropeLength -= 2)
         foreach (var facing in new[] { -1, 1 })
         {
             // The sphere sits beside the outline, not over the face of the
@@ -37,6 +45,8 @@ public static class HangingToyInteraction
             var ballX=(restingBall.X-x)/scale;
             if(facing<0&&ballX>=0||facing>0&&ballX<=116)continue;
             if (ContactPoint(character, restingBall, x, y, bodyHeight, sceneScale) is null) continue;
+            if (contactSilhouette is not null && !contactSilhouette.IsSphereClear(
+                new(ballX, (restingBall.Y - y) / scale), ContactRadius * sceneScale / scale)) continue;
             return new(x, y, facing, ropeLength, support, character == PetAppearance.Cat);
         }
         return null;

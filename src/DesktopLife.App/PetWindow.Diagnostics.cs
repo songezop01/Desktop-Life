@@ -54,9 +54,12 @@ public partial class PetWindow
             {
                 poseAction=null;teaserPawTarget=null;tree.StepTeaser(.016);
                 PlayTeaser(.016,clock.Elapsed.TotalSeconds+i*.016,85);StepPetGravity(.016);
+                // The production contact guard requires the actual play pose.
+                // A frozen fixture must advance that same pose/layout every tick,
+                // rather than waiting for a contact before presenting its paw.
+                ApplyPose(i*.016);UpdateLayout();
                 if(TeaserContactCount>count)
                 {
-                    ApplyPose(.7);UpdateLayout();
                     var frame=new RenderTargetBitmap(116,144,96,96,PixelFormats.Pbgra32);frame.Render(Character);
                     if(teaserPawTarget is not {} target||TeaserRenderedPawTip is not {} tip||(target-tip).Length>2)
                         throw new Exception("Teaser impulse had no matching visible paw contact.");

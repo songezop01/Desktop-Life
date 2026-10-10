@@ -65,6 +65,37 @@ public class HangingToyInteractionTests
         Assert.Null(HangingToyInteraction.Plan(PetAppearance.BorderCollie,new(140,10),new(155,110,50,50),new(0,1000,730,730),new(0,0,1000,800),84,104,1));
     }
     [Fact]
+    public void CompactUpperFloorStringPlansAroundTheActualContactSilhouette()
+    {
+        const double scene=.758364312267658,height=78.86988847583643,feet=539.9553903345725;
+        var anchor=new RoomPoint(1008.5947955390335,522.2602230483271-160*scene);
+        var shelf=new RoomPlatform(1020,80,480,480);var floor=new RoomPlatform(15.16728624535316,1505.6654275092937,feet,feet);
+        var bounds=new BodyBounds(0,0,1536,816);var width=height*116/144;
+        // A painted edge at the failed mixed-scene height. The native regression
+        // supplies the complete, filtered Frame 7 illustration independently.
+        var alpha=new byte[116*144];alpha[112*116]=255;
+        var silhouette=HangingToySilhouette.FromAlpha(alpha,116,144,1);
+        var previous=HangingToyInteraction.Plan(PetAppearance.BorderCollie,anchor,shelf,floor,bounds,width,height,scene)!;
+        var radius=HangingToyInteraction.ContactRadius*scene/(height/144);
+        Assert.Equal(160,previous.RopeLength);
+        Assert.False(silhouette.IsSphereClear(new((anchor.X-previous.X)/(height/144),
+            (anchor.Y+previous.RopeLength*scene-previous.Y)/(height/144)),radius));
+        var planned=HangingToyInteraction.Plan(PetAppearance.BorderCollie,anchor,shelf,floor,bounds,width,height,scene,silhouette);
+        Assert.NotNull(planned);Assert.False(planned!.UsesShelf);Assert.Equal(floor,planned.Support);
+        Assert.Equal(feet,planned.Y+height,6);Assert.InRange(planned.RopeLength,HangingToy.Length,158);
+        var ball=new RoomPoint(anchor.X,anchor.Y+planned.RopeLength*scene);
+        Assert.True(silhouette.IsSphereClear(new((ball.X-planned.X)/(height/144),(ball.Y-planned.Y)/(height/144)),radius));
+        Assert.NotNull(HangingToyInteraction.ContactPoint(PetAppearance.BorderCollie,ball,planned.X,planned.Y,height,scene));
+    }
+    [Fact]
+    public void ACompletelyOccludedReachableStringCannotInventAVisibleStance()
+    {
+        var alpha=Enumerable.Repeat((byte)255,116*144).ToArray();
+        var silhouette=HangingToySilhouette.FromAlpha(alpha,116,144,1);
+        Assert.Null(HangingToyInteraction.Plan(PetAppearance.BorderCollie,new(140,570),new(165,110,612,612),
+            new(0,1000,730,730),new(0,0,1000,800),104d*116/144,104,1,silhouette));
+    }
+    [Fact]
     public void ExtendRetractNeverTeleportsOrEscapesFurnitureWidth()
     {
         var toy=new HangingToy();toy.SetLength(140);toy.Bat(1000);

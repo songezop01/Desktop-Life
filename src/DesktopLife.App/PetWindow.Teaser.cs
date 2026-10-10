@@ -11,14 +11,28 @@ public partial class PetWindow
     private RoomWindow? adjustedTeaser;
     private readonly TeaserPawVisual teaserPawVisual = new();
     private readonly ObservedPlayExposure teaserPlayExposure = new();
+    private readonly Dictionary<string, int> teaserContactRejections = [];
+    private readonly Dictionary<string, int> teaserStartRejections = [];
+    private readonly Dictionary<string, object> teaserLastRejectedContact = [];
     private static readonly Dictionary<PetAppearance,HangingToySilhouette> teaserContactSilhouettes=[];
+    private sealed record TeaserStanceGeometry(PetAppearance Character,RoomPoint Anchor,RoomPlatform Shelf,
+        RoomPlatform Floor,BodyBounds Bounds,double Width,double Height,double Scale);
+    private TeaserStanceGeometry? cachedTeaserGeometry;
+    private HangingToyStance? cachedTeaserStance;
     internal Point? TeaserRenderedPawTip => teaserPawVisual.RenderedTip;
 
     internal bool TryStartTeaserActivity(RoomWindow surface)
     {
-        if (!IsVisible || paused || EditingRoom || Interacting || DirectCareHolding || !petGravity.Grounded || FinishingMotion || HouseMotionActive ||
-            sequence is { Finished: false } || !Furniture.Contains(surface) || !CanPlayTeaser(surface) ||
-            !Occupancy.Available(surface.Item.Id.ToString(), appearance)) return false;
+        bool Reject(string reason)
+        {
+            if (stressEnabled) teaserStartRejections[reason] = teaserStartRejections.GetValueOrDefault(reason) + 1;
+            return false;
+        }
+        if (!IsVisible || paused || EditingRoom || Interacting || DirectCareHolding) return Reject("interaction-suspended");
+        if (!petGravity.Grounded || FinishingMotion || HouseMotionActive) return Reject("movement-unsettled");
+        if (sequence is { Finished: false }) return Reject("sequence-still-active");
+        if (!Furniture.Contains(surface) || !CanPlayTeaser(surface)) return Reject("stance-unavailable");
+        if (!Occupancy.Available(surface.Item.Id.ToString(), appearance)) return Reject("shared-toy-occupied");
         requestedToy = null; requestedTeaser = surface;
         if (!RequestAction(BodyAction.PlayToy, BehaviorInterruptReason.Stimulus)) { requestedTeaser = null; return false; }
         requestedTeaser = null;
@@ -29,11 +43,18 @@ public partial class PetWindow
     {
         stance = null!;
         if (target.Teaser is not { } hanging || target.Platforms.Count < 2 || !HangingToyInteraction.Allowed(appearance)) return false;
-        var ball = target.TeaserPosition;
-        var anchor = new RoomPoint(ball.X - hanging.X * target.SceneScale, ball.Y - hanging.Y * target.SceneScale);
+        var sourceAnchor = target.TeaserAnchorPosition;
+        var anchor = new RoomPoint(sourceAnchor.X,sourceAnchor.Y);
         var floor = House is { } house ? house.Floors[Math.Clamp(target.Item.FloorIndex, 0, house.FloorCount - 1)].Platform :
             new RoomPlatform(Bounds().Left, Bounds().Width, Bounds().Top + Bounds().Height, Bounds().Top + Bounds().Height);
-        var found = HangingToyInteraction.Plan(appearance, anchor, target.Platforms[1], floor, Bounds(), BodyWidth, BodyHeight, target.SceneScale);
+        var geometry = new TeaserStanceGeometry(appearance,anchor,target.Platforms[1],floor,Bounds(),BodyWidth,BodyHeight,target.SceneScale);
+        if (cachedTeaserGeometry != geometry)
+        {
+            cachedTeaserGeometry = geometry;
+            cachedTeaserStance = GetTeaserContactSilhouette() is {} silhouette ? HangingToyInteraction.Plan(appearance,
+                anchor, target.Platforms[1], floor, geometry.Bounds, BodyWidth, BodyHeight, target.SceneScale, silhouette) : null;
+        }
+        var found = cachedTeaserStance;
         if (found is null) return false;
         stance = found; return true;
     }
@@ -65,9 +86,9 @@ public partial class PetWindow
     private RoomPoint? TeaserContact(RoomWindow target) => HangingToyInteraction.ContactPoint(appearance,
         new(target.TeaserPosition.X, target.TeaserPosition.Y), body.X, body.Y, BodyHeight, target.SceneScale);
 
-    private bool TeaserBallIsVisible(RoomWindow target)
+    private HangingToySilhouette? GetTeaserContactSilhouette()
     {
-        if(!sprite.Ready||CompanionSpriteAtlas.For(appearance) is not {} atlas)return false;
+        if(!sprite.Ready||CompanionSpriteAtlas.For(appearance) is not {} atlas)return null;
         if(!teaserContactSilhouettes.TryGetValue(appearance,out var future))
         {
             var frame=atlas.Frames[7];var imageScale=Math.Min(atlas.Scale,Math.Min(112d/frame.Width,144d/frame.Height));
@@ -81,6 +102,12 @@ public partial class PetWindow
             var alpha=new byte[116*144];for(var i=0;i<alpha.Length;i++)alpha[i]=pixels[i*4+3];
             teaserContactSilhouettes[appearance]=future=HangingToySilhouette.FromAlpha(alpha,116,144,1);
         }
+        return future;
+    }
+
+    private bool TeaserBallIsVisible(RoomWindow target)
+    {
+        if(GetTeaserContactSilhouette() is not {} future)return false;
         var scale=BodyHeight/CharacterGeometry.CanonicalHeight;var ball=target.TeaserPosition;
         var local=new RoomPoint((ball.X-body.X)/scale,(ball.Y-body.Y)/scale);
         var radius=HangingToyInteraction.ContactRadius*target.SceneScale/scale;
@@ -104,19 +131,38 @@ public partial class PetWindow
 
     private bool ApplyTeaserContact(RoomWindow target, RoomPoint? contact, double reach, double contactSeconds = 0)
     {
-        if (contact is not { } point || !petGravity.Grounded || Interacting || EditingRoom || paused || !CanPlayTeaser(target) ||
-            !TryTeaserStance(target, out var stance) || Math.Abs(body.Y + BodyHeight - stance.Support.Y) > target.SceneScale ||
-            Math.Abs(body.X - stance.X) > Math.Max(1.5, target.SceneScale)) return false;
+        bool Reject(string reason)
+        {
+            // Keep evidence from the real mixed-scene contact path. Normal
+            // operation neither records a per-frame log nor changes its gates.
+            if (stressEnabled)
+            {
+                teaserContactRejections[reason] = teaserContactRejections.GetValueOrDefault(reason) + 1;
+                // One last state per fixed gate reason is bounded and lets the
+                // report distinguish real reach, grounding and presentation.
+                teaserLastRejectedContact[reason] = CaptureTeaserDiagnosticState(target);
+            }
+            return false;
+        }
+        if (contact is not { } point) return Reject("outside-paw-reach");
+        if (!petGravity.Grounded) return Reject("not-grounded");
+        if (Interacting || EditingRoom || paused) return Reject("interaction-suspended");
+        if (!CanPlayTeaser(target) || !TryTeaserStance(target, out var stance)) return Reject("stance-unavailable");
+        if (Math.Abs(body.Y + BodyHeight - stance.Support.Y) > target.SceneScale) return Reject("wrong-support-height");
+        if (Math.Abs(body.X - stance.X) > Math.Max(1.5, target.SceneScale)) return Reject("stance-not-reached");
         SetTeaserReach(point, reach);
-        if (reach < 1 || target.Teaser is not { } hanging || Math.Abs(hanging.RopeLength - hanging.TargetLength) > .25 ||
-            !sprite.Ready || sprite.Visibility != Visibility.Visible || sprite.FrameIndex != 7 || sprite.PresentedFrameIndex != 7) return false;
+        if (reach < 1) return Reject("paw-still-extending");
+        if (target.Teaser is not { } hanging) return Reject("ball-removed");
+        if (Math.Abs(hanging.RopeLength - hanging.TargetLength) > .25) return Reject("string-still-extending");
+        if (!sprite.Ready || sprite.Visibility != Visibility.Visible) return Reject("illustration-unavailable");
+        if (sprite.FrameIndex != 7 || sprite.PresentedFrameIndex != 7) return Reject("play-pose-not-presented");
         var scale = BodyHeight / CharacterGeometry.CanonicalHeight;
         var tip = new Point(body.X + teaserPawTarget!.Value.X * scale, body.Y + teaserPawTarget.Value.Y * scale);
         var ball = target.TeaserPosition;
-        if (Math.Abs((tip - ball).Length - HangingToyInteraction.ContactRadius * target.SceneScale) > .25 * target.SceneScale) return false;
+        if (Math.Abs((tip - ball).Length - HangingToyInteraction.ContactRadius * target.SceneScale) > .25 * target.SceneScale) return Reject("paw-misses-sphere");
         // A swing can briefly pass behind the crouching silhouette. Wait for
         // the visible ball instead of presenting an invisible impact through a head.
-        if(!TeaserBallIsVisible(target))return false;
+        if(!TeaserBallIsVisible(target))return Reject("sphere-covered-by-illustration");
         // The exact displayed raster paw tip reaches the real circumference before
         // the pendulum receives momentum or the sequence can earn play benefit.
         hanging.Bat(facing * 125); TeaserContactCount++;

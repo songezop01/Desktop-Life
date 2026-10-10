@@ -142,6 +142,35 @@ jobs:
           }
           $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $assets 'BUILD-INFO.json') -Encoding utf8NoBOM
           Copy-Item -LiteralPath (Join-Path $assets 'BUILD-INFO.json') -Destination $package
+          # Select the documentation for the actual version being published.
+          # Existing releases are preserved by the preceding immutable-tag check.
+          if ($env:RELEASE_VERSION -match '^0\.12\.') {
+            $updateDocument = 'UPDATE_012.md'
+            $migrationNotes = @(
+              '0.12 使用 schema 8：舊 schema 2–7 存檔會升級，既有角色與家具保留，食盆與餐桌起始為空庫存。',
+              '回復 0.11 必須還原升級前的 schema 7 備份及對應程式，不能只更換 EXE。',
+              '本機正式升級流程先核對相符的發行驗證，再檢查安裝包、完整備份與回復入口。此 CI 可攜包仍需依自己的建置紀錄及校驗值判讀。'
+            )
+            $changeDescription = '改用家具有限食物與自主進食、直接撫摸及拖梳子照顧；貓狗可實際接觸貓跳台吊球。進階／診斷提供隔離短測、長測、停止與報告；行走及樓梯動作加入有界內插與落腳校準。'
+            $featureNotes = '舊照顧右鍵與控制台照顧對象已移除；請在食盆／餐桌補食物、靠近角色撫摸，或拖動梳子接觸毛髮。三角色的改名、記憶與狀態入口保留。'
+            $versionDocuments = @('docs/UPDATE_012.md', 'docs/DEVELOPMENT_012.md', 'docs/DESIGN_012.md')
+          } elseif ($env:RELEASE_VERSION -eq '0.11.1') {
+            $updateDocument = 'UPDATE_0111.md'
+            $migrationNotes = @(
+              '0.11 存檔使用 schema 7；回復 0.10.1 必須還原升級前的 schema 6 備份，不能只更換 EXE。',
+              '0.11.1 修補診斷頁閃退與照顧操作；既有 0.11.0 使用者可在正常退出並備份後升級。'
+            )
+            $changeDescription = '修補進階／診斷頁閃退、佈置模式擋住照顧動作、邀玩誤選忙碌玩具及隱藏的操作回應。角色旁新增照顧提示，女孩選單與活動名稱一致。'
+            $featureNotes = '實體食盆、餐桌料理、拖梳子、直接撫摸、吊球及樓梯新步態屬於 0.12 設計，未包含在此修補。'
+            $versionDocuments = @('docs/UPDATE_011.md', 'docs/UPDATE_0111.md', 'docs/DESIGN_012.md')
+          } else {
+            throw "No reviewed release documentation is configured for $env:RELEASE_VERSION."
+          }
+          foreach ($document in $versionDocuments) {
+            if (!(Test-Path -LiteralPath $document -PathType Leaf)) {
+              throw "The release documentation is missing: $document"
+            }
+          }
           $readme = @(
             "# Desktop Life $env:RELEASE_VERSION",
             '',
@@ -152,8 +181,7 @@ jobs:
             '',
             '升級前請先正常結束舊程式並備份全部資料；請依專案文件的升級及回復流程操作。',
             '資料位於 %LOCALAPPDATA%\DesktopLife。不要把下載包解壓縮到此資料目錄。',
-            '0.11 存檔使用 schema 7；回復 0.10.1 必須還原升級前的 schema 6 備份，不能只更換 EXE。',
-            '0.11.1 修補診斷頁閃退與照顧操作；既有 0.11.0 使用者可在正常退出並備份後升級。',
+            $migrationNotes,
             '',
             '## 版本與驗證',
             '',
@@ -164,12 +192,13 @@ jobs:
             '本機已安裝版本與此 CI 下載包各有自己的校驗值；同版本不代表二進位檔案完全相同。',
             '此版本尚未數位簽章。實體 S20 拔插、旋轉與硬體休眠仍是獨立驗證項目。',
             '',
-            '更新內容及測試政策見 docs/UPDATE_0111.md、docs/VERIFICATION_WORKFLOW.md；0.12 為後續設計。'
+            "更新內容及測試政策見 docs/$updateDocument、docs/VERIFICATION_WORKFLOW.md。"
           )
+          $readme = @($readme | ForEach-Object { $_ })
           $readme | Set-Content -LiteralPath (Join-Path $package 'README.md') -Encoding utf8NoBOM
           $docs = Join-Path $package 'docs'
           New-Item -ItemType Directory -Path $docs | Out-Null
-          Copy-Item -LiteralPath 'docs/UPDATE_011.md', 'docs/UPDATE_0111.md', 'docs/DESIGN_012.md', 'docs/VERIFICATION_WORKFLOW.md', 'AGENTS.md' -Destination $docs
+          Copy-Item -LiteralPath ($versionDocuments + @('docs/VERIFICATION_WORKFLOW.md', 'AGENTS.md')) -Destination $docs
           $zipName = "DesktopLife-$env:RELEASE_VERSION-win-x64.zip"
           $zip = Join-Path $assets $zipName
           Compress-Archive -Path (Join-Path $package '*') -DestinationPath $zip -CompressionLevel Optimal
@@ -179,10 +208,11 @@ jobs:
             "# Desktop Life $env:RELEASE_VERSION — Windows x64",
             '',
             "下載 DesktopLife-$env:RELEASE_VERSION-win-x64.zip，解壓縮後執行 DesktopLife.exe，無需另裝 .NET。",
-            '修補進階／診斷頁閃退、佈置模式擋住照顧動作、邀玩誤選忙碌玩具及隱藏的操作回應。角色旁新增照顧提示，女孩選單與活動名稱一致。詳細變更與目前限制見 ZIP 內的 UPDATE_0111.md。',
-            '實體食盆、餐桌料理、拖梳子、直接撫摸、吊球及樓梯新步態屬於 0.12 設計，未包含在此修補。',
+            "$changeDescription 詳細變更與目前限制見 ZIP 內的 docs/$updateDocument。",
+            $featureNotes,
             '',
-            '既有使用者請先正常退出、備份資料並保留回復入口。此下載包不會自動取代現有安裝；0.11 回復 0.10.1 需要升級前的 schema 6 備份。',
+            '既有使用者請先正常退出、備份資料並保留回復入口。此下載包不會自動取代現有安裝。',
+            $migrationNotes,
             '',
             '## 來源與校驗',
             '',
@@ -197,6 +227,7 @@ jobs:
             '依 2026-10-08 政策，同一 minor 系列修正採 Standard；跨 minor 更新才考慮 Full。已完成的 0.11 Full 證據不會由此流程重跑。',
             '程式尚未數位簽章。實體 spacedesk S20 拔插、旋轉與硬體休眠仍未驗證。'
           )
+          $notes = @($notes | ForEach-Object { $_ })
           $notes | Set-Content -LiteralPath (Join-Path $assets 'release-notes.md') -Encoding utf8NoBOM
 
       - name: Create a new immutable-by-policy version release
