@@ -15,6 +15,45 @@ public static class HouseTraversal
 {
     public const double MaximumElapsedSeconds = .1;
 
+    /// <summary>Preserves an active route's real contact during a non-moving tick; never creates a landing.</summary>
+    public static RoomPlatform? ContactSupport(HouseLayout layout, HouseTravelWaypoint? step, RoomPoint currentFeet)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(currentFeet);
+        if (step is null || !Finite(currentFeet) || !Finite(step.From) || !Finite(step.To)) return null;
+        RoomPlatform support;
+        double tolerance;
+        if (step.Kind == HouseTravelKind.FloorWalk)
+        {
+            if (step.SourceFloor < 0 || step.SourceFloor >= layout.FloorCount || step.TargetFloor != step.SourceFloor)
+                return null;
+            var floor = layout.Floors[step.SourceFloor];
+            tolerance = layout.FloorContactTolerance;
+            // A stale route must not attach to the replacement house merely because
+            // its source index still exists; both planned endpoints belong to this floor.
+            if (Math.Abs(step.From.Y - floor.Y) > tolerance || Math.Abs(step.To.Y - floor.Y) > tolerance ||
+                step.From.X < floor.Left || step.From.X > floor.Right || step.To.X < floor.Left || step.To.X > floor.Right)
+                return null;
+            support = floor.Platform;
+        }
+        else if (step.Kind == HouseTravelKind.Stair)
+        {
+            var stair = layout.Stairs.SingleOrDefault(s => s.ReservationKey == step.ConnectorId);
+            if (stair is null) return null;
+            var upward = step.SourceFloor == stair.LowerFloor && step.TargetFloor == stair.UpperFloor;
+            var downward = step.SourceFloor == stair.UpperFloor && step.TargetFloor == stair.LowerFloor;
+            if (!upward && !downward || Distance(step.From, upward ? stair.LowerLanding : stair.UpperLanding) > .75 ||
+                Distance(step.To, upward ? stair.UpperLanding : stair.LowerLanding) > .75) return null;
+            support = stair.Support;
+            tolerance = .75;
+        }
+        else return null;
+        if (currentFeet.X < support.X || currentFeet.X > support.X + support.Width ||
+            Math.Abs(support.HeightAt(currentFeet.X) - currentFeet.Y) > tolerance ||
+            !Advance(step, currentFeet, 0, 1).Supported) return null;
+        return support;
+    }
+
     public static IReadOnlyList<HouseTravelWaypoint>? Plan(HouseLayout layout, double footX, double footY,
         int goalFloor, double goalX, double halfWidth = 0)
     {

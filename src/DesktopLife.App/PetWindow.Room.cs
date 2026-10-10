@@ -83,12 +83,14 @@ public partial class PetWindow
     {
         if(drag.Active)return;
         if(houseControlledThisFrame)return;
-        if(houseRoute.TryPeek(out var travel)&&travel.Kind==HouseTravelKind.Stair&&House is {} h)
+        if(houseRoute.TryPeek(out var travel)&&House is {} h&&
+            HouseTraversal.ContactSupport(h,travel,new(body.X+HalfWidth,body.Y+BodyHeight)) is {} support)
         {
-            var support=h.Stairs.Single(s=>s.ReservationKey==travel.ConnectorId).Support;
-            var center=body.X+HalfWidth;
-            if(center>=support.X&&center<=support.X+support.Width&&Math.Abs(support.HeightAt(center)-body.Y-BodyHeight)<1)
-            {petGravity.PlaceSupported(body.X,body.Y,BodyWidth,BodyHeight,support);return;}
+            // Standing up, paused care and other non-moving ticks retain the
+            // same validated floor/stair that the existing route actually uses.
+            // Ordinary gravity can otherwise lift floor feet onto a Box interior
+            // less than five DIP above them and invalidate the next house step.
+            petGravity.PlaceSupported(body.X,body.Y,BodyWidth,BodyHeight,support);return;
         }
         petGravity.X=body.X;petGravity.Y=body.Y;
         petGravity.Step(dt,Bounds(),BodyWidth,BodyHeight,0,RoomPlatforms());

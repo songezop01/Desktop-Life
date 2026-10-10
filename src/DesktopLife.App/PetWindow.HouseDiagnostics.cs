@@ -118,6 +118,7 @@ public partial class PetWindow
                     throw new Exception($"{actor.appearance} failed to settle after drag cancelled a stair route.");
                 evidence.Add(new{Character=actor.appearance.ToString(),Lifecycle="drag-cancel-ground-recovery",Passed=true});
             }
+            SmokeHouseFloorWaitSupport(residents,evidence);
             SmokeHouseLowBoxExit(residents,evidence);
             SmokeHouseActivitySupports(residents,evidence);
             File.WriteAllText(Path.Combine(root,"house-travel-check.json"),JsonSerializer.Serialize(new{Passed=true,Cases=evidence},new JsonSerializerOptions{WriteIndented=true}));
