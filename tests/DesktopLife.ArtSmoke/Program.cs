@@ -44,7 +44,7 @@ internal static partial class Program
                 }
             }
             Save(Render(sheet,1856,864),Path.Combine(root,"walk-cycles.png"));
-            Require(FurnitureArt.LoadedCount==19,"All nineteen furniture sprites loaded: "+FurnitureArt.Failure);
+            Require(FurnitureArt.LoadedCount==Enum.GetValues<FurnitureKind>().Length,"All furniture sprites loaded: "+FurnitureArt.Failure);
             var furnitureSheet=new DrawingVisual();
             using(var drawing=furnitureSheet.RenderOpen())
             {
@@ -67,7 +67,7 @@ internal static partial class Program
             IllustrationAnimationChecks.VerifyTransitions(root);
             if(args.Contains("--candidates"))ValidateTransitionCandidates(root);
             File.WriteAllText(Path.Combine(root,"asset-checks.json"),JsonSerializer.Serialize(new{Status="PASS",Timestamp=DateTimeOffset.Now,Proportions=new{Girl=girl,Cat=cat,Dog=dog},WalkChecks=checks,Furniture=FurnitureArt.Diagnostic},new JsonSerializerOptions{WriteIndented=true}));
-            Console.WriteLine("PASS: body ratios, three 8-frame walk cycles, grounded alpha, transparent hit areas, stationary phase and 19 furniture support maps.");application.Shutdown();return 0;
+            Console.WriteLine("PASS: body ratios, three 8-frame walk cycles, grounded alpha, transparent hit areas, stationary phase and all furniture support maps.");application.Shutdown();return 0;
         }
         catch(Exception ex)
         {
@@ -80,5 +80,5 @@ internal static partial class Program
     private static byte[] Pixels(BitmapSource image){var result=new byte[image.PixelWidth*image.PixelHeight*4];image.CopyPixels(result,image.PixelWidth*4,0);return result;}
     private static void Save(BitmapSource image,string path){var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using(var stream=File.Create(path))encoder.Save(stream);}
     private static (double Width,double Height) Size(FurnitureKind kind)=>kind switch
-    {FurnitureKind.HumanBed=>(280,110),FurnitureKind.Sofa=>(260,120),FurnitureKind.Chair=>(110,145),FurnitureKind.DiningTable=>(250,160),FurnitureKind.Computer=>(110,90),FurnitureKind.DrawingBook=>(100,28),FurnitureKind.LegoBox=>(130,65),FurnitureKind.CatBowl=>(80,28),FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),_=>(140,45)};
+    {FurnitureKind.HumanBed=>(280,110),FurnitureKind.Sofa=>(260,120),FurnitureKind.Chair=>(110,145),FurnitureKind.DiningTable=>(250,160),FurnitureKind.Computer=>(110,90),FurnitureKind.DrawingBook=>(100,28),FurnitureKind.LegoBox=>(130,65),FurnitureKind.CatBowl=>(80,28),FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),FurnitureKind.Comb=>(120,40),_=>(140,45)};
 }

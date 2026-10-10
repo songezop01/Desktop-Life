@@ -24,6 +24,7 @@ public static class FurnitureCompatibility
             },
             PetAppearance.BorderCollie => furniture switch
             {
+                FurnitureKind.CatTree => use == FurnitureUse.Play,
                 FurnitureKind.CatBowl => use == FurnitureUse.Eat,
                 FurnitureKind.BellBall => use == FurnitureUse.Play,
                 FurnitureKind.PetBed or FurnitureKind.Cushion or FurnitureKind.HumanBed or FurnitureKind.Sofa

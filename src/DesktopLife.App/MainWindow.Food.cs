@@ -86,7 +86,7 @@ public partial class MainWindow
         foreach (var kind in FoodResidents())
         {
             var actor = CharacterWindow(kind);
-            if (LifeFor(kind).State.Hunger < 55 || actor.Interacting || actor.FinishingMotion || actor.CurrentAction == BodyAction.Sleep || actor.SequenceCommitted) continue;
+            if (LifeFor(kind).State.Hunger < 55 || actor.Interacting || actor.DirectCareHolding || actor.FinishingMotion || actor.CurrentAction == BodyAction.Sleep || actor.SequenceCommitted) continue;
             actor.TryStartFoodActivity();
         }
     }

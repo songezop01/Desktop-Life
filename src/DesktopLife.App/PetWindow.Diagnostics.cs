@@ -57,8 +57,8 @@ public partial class PetWindow
                 if(TeaserContactCount>count)
                 {
                     ApplyPose(.7);UpdateLayout();
-                    var frame=new RenderTargetBitmap(116,144,96,96,PixelFormats.Pbgra32);frame.Render(VisibleCharacterVisual);
-                    if(teaserPawTarget is not {} target||feline.RenderedPawTip is not {} tip||(target-tip).Length>2)
+                    var frame=new RenderTargetBitmap(116,144,96,96,PixelFormats.Pbgra32);frame.Render(Character);
+                    if(teaserPawTarget is not {} target||TeaserRenderedPawTip is not {} tip||(target-tip).Length>2)
                         throw new Exception("Teaser impulse had no matching visible paw contact.");
                     break;
                 }

@@ -29,6 +29,7 @@ public partial class PetWindow
     public RoomState CaptureRoom()=>new(){WorkArea=Bounds(),FloorCount=House?.FloorCount??1,Ball=new(Ball.Model.X,Ball.Model.Y),Square=new(Square.Model.X,Square.Model.Y),Items=Furniture.Select(f=>f.Item).Concat(ExtraToys.Select(t=>t.RoomItem! with{X=t.Model.X,Y=t.Model.Y,FloorIndex=BaseFloor(t.Model.Y+40)})).ToList()};
     public void RemapWorkspace(BodyBounds from,BodyBounds to)
     {
+        CancelDirectCare();
         CancelRoute();sequence?.Interrupt(BehaviorInterruptReason.Safety);
         var p=RoomCoordinates.Rehome(new(body.X,body.Y),from,to,BodyWidth,BodyHeight);body.Place(p.X,p.Y,to);petGravity.VX=petGravity.VY=0;
         if(worldOwner is not null){ApplyPosition();return;}
@@ -37,7 +38,7 @@ public partial class PetWindow
         Art.Update(to,[],body.Action,clock.Elapsed.TotalSeconds,body.X,body.Y);ApplyPosition();
     }
     public void SetRoomEditing(bool editing)
-    {EditingRoom=editing;if(editing){ReleaseFoodReservation();sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute(preserveRecovery:true);queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;}foreach(var f in Furniture)f.SetEditing(editing);}
+    {EditingRoom=editing;if(editing){CancelDirectCare();ReleaseFoodReservation();sequence?.Interrupt(BehaviorInterruptReason.Safety);CancelRoute(preserveRecovery:true);queuedAction=null;poseAction=BodyAction.ObserveCursor;if(petGravity.Grounded)petGravity.VX=0;SnapPresentation();}foreach(var f in Furniture)f.SetEditing(editing);}
     public void AddRoomItem(RoomItem item)
     {
         if(Furniture.Count+ExtraToys.Count>=24)return;
@@ -73,34 +74,7 @@ public partial class PetWindow
         return platformCache;
     }
     private bool PlayTeaser(double dt, double now, double speed)
-    {
-        if(!CanPlayTeaser(teaserTarget)||teaserTarget?.Teaser is not {} pendulum)return false;
-        var platform=teaserTarget.Platforms[1];
-        // Approach from the lower shelf, on the right of the string anchor.
-        // The upper shelf is above the string; sitting there cannot reach this ball.
-        var x=teaserTarget.Item.X+25;
-        var y=platform.Y-BodyHeight;
-        MovePetToward(x,y,dt,Bounds(),speed);
-        var ball=teaserTarget.TeaserPosition;
-        facing=-1;
-        if(Math.Abs(body.X-x)>10 || Math.Abs(body.Y-y)>2 || !petGravity.Grounded)
-        {poseAction=BodyAction.Walk;lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
-        poseAction=BodyAction.ObserveCursor;
-        if(feline.IsTurning){lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
-        var local=new Point((ball.X-body.X)/(BodyHeight/144),(ball.Y-body.Y)/(BodyHeight/144));
-        var shoulder=new Point(40,114);
-        if(local.X<6||local.X>110||local.Y<72||local.Y>140||(local-shoulder).Length>58)
-        {lastTeaserTap=Math.Max(lastTeaserTap,now-.9);return true;}
-        // A visible reach precedes impact. The same point drives paw drawing and contact.
-        var since=now-lastTeaserTap;
-        if(since>=.9)
-        {
-            poseAction=BodyAction.BatToy;teaserPawTarget=local;
-            if(since>=1.1)
-            {pendulum.Bat(-125);lastTeaserTap=now;TeaserContactCount++;}
-        }
-        return true;
-    }
+        => TickFreeTeaser(dt, now, speed);
     private void MovePetToward(double x,double y,double dt,BodyBounds bounds,double speed)
     {
         Navigate(x,y,dt,bounds,speed);

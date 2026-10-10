@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         InitializeLearning(dataRoot,settings with{PetAppearance=checkpoint.Settings.PetAppearance},checkpoint.Learning);
         InitializePresence(checkpoint);
         InitializeFood(checkpoint);
+        InitializeDirectCare();
         if(!SavePetState())throw new IOException("初始狀態無法保存。");
         ShowHomeostasis();
         SettingsText.Text = "本機陪伴與偏好記憶，不連接雲端。真實桌面圖示互動需另外啟用；移動前備份，可一鍵恢復。";
@@ -101,7 +102,7 @@ public partial class MainWindow : Window
     {
         if (suspendedAt is not null) return;
         var elapsed = lifeClock.Elapsed;
-        Life.AdvanceCompanion(elapsed-lastLifeTick,Pet.PhysiologicalAction,LatestEnvironment?.IdleSeconds.Value is <300);
+        Pet.AdvanceCompanionWithTeaserEvidence(Life,elapsed-lastLifeTick,LatestEnvironment?.IdleSeconds.Value is <300);
         TickCompanion();
         TickOther(Math.Max(0,(elapsed-lastLifeTick).TotalSeconds));
         TickFood();
@@ -116,6 +117,7 @@ public partial class MainWindow : Window
         {
             if (e.Mode == PowerModes.Suspend && suspendedAt is null)
             {
+                foreach(var actor in characterWindows)actor.CancelDirectCare();
                 TickLife(); SavePetState(); suspendedAt = DateTimeOffset.UtcNow;
             }
             else if (e.Mode == PowerModes.Resume && suspendedAt is { } began)

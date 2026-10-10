@@ -92,7 +92,10 @@ public partial class PetWindow
         if(roomActivity==RoomActivity.Feed&&FoodForFurniture is not null)exists=exists&&FoodTargetAvailable();
         if(homeTarget is {} target&&!FurnitureCompatibility.CanUse(appearance,target.Kind,use))
         {InvalidFurnitureInteractions++;s.Interrupt(BehaviorInterruptReason.Safety);}
-        var reached=Math.Abs(body.X+HalfWidth-homeX)<4&&Math.Abs(body.Y+BodyHeight-homeFeet)<5;
+        // Finish the reserved stair/floor waypoint before starting work. A
+        // four-DIP approach tolerance used to stop the last house segment early,
+        // leaving its motion flag active throughout an otherwise reached meal.
+        var reached=!FinishingMotion&&Math.Abs(body.X+HalfWidth-homeX)<4&&Math.Abs(body.Y+BodyHeight-homeFeet)<5;
         s.Step(dt,new(TargetExists:exists,Reached:reached,Grounded:petGravity.Grounded,NavigationFailed:MovementPhase==NavigationPhase.Unreachable));
         attentionPoint=new(homeX,homeFeet-60);sequencePoseAge=s.PhaseAge;
         poseAction=s.Phase==BehaviorPhase.Approach?BodyAction.Walk:appearance!=PetAppearance.Girl&&s.Phase==BehaviorPhase.Work?BodyAction.Eat:BodyAction.Sit;

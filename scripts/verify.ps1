@@ -8,6 +8,7 @@ $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 . "$PSScriptRoot/release-verification.ps1"
 $version=Get-DesktopLifeReleaseVersion $root
+$components=@(Get-DesktopLifeComponentSpecifications $version)
 $base=Join-Path $root 'artifacts/verification'
 if(!$Worker){
     $RunDirectory=Join-Path $base ('runs/'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))
@@ -46,6 +47,7 @@ if($git){$branch=& $git.Source -C $root branch --show-current;$commit=& $git.Sou
 $report=[ordered]@{Version=$version;Branch=$branch;Commit=$commit;Dirty=$dirty;Mode=$Mode;StartedUtc=$start;DurationSeconds=0;Conclusion='RUNNING';SourceSealed=$false;Stages=[ordered]@{};Warnings=@();RunDirectory=$RunDirectory}
 $report['SourceHashes']=@(Get-DesktopLifeSourceInventory $root)
 foreach($stage in @('Build','Tests','Analyzer','Deployment','WpfSmoke','HouseMixedDpi','Identity','Longitudinal','ShortStress','Soak','DualPresence')){$report.Stages[$stage]='NOT RUN'}
+foreach($component in $components){$report.Stages[$component.Stage]='NOT RUN'}
 function Publish-Summary {
     $report.DurationSeconds=[math]::Round(([DateTime]::UtcNow-$start).TotalSeconds,1)
     $json=$report | ConvertTo-Json -Depth 12
@@ -89,7 +91,7 @@ function Invoke-StressAnalysis([ValidateSet('short','soak')][string]$Label){
         $report.Warnings+="Resource/navigation review: $failure"
         throw "$Label stress analysis requires attention: $($analysis.Conclusion). No later workload started."
     }
-    Assert-DesktopLifeStressEvidence $report.BuildHashes $RunDirectory $Label
+    Assert-DesktopLifeStressEvidence $report.BuildHashes $RunDirectory $Label $version
     # Avoid a two-hour workload if the short run already tested stale source/binaries.
     Assert-DesktopLifeSourceInventory $report.SourceHashes $root
     Assert-DesktopLifeBuildInventory $report.BuildHashes $root
@@ -109,6 +111,7 @@ try{
     Invoke-Stage Deployment {
         & "$PSScriptRoot/test-deployment-transactions.ps1" -OutputDirectory (Join-Path $raw 'deployment')
         & "$PSScriptRoot/test-release-verification.ps1" -OutputDirectory (Join-Path $raw 'release-gates')
+        if($components.Count -gt 0){& "$PSScriptRoot/test-upgrade012-contract.ps1" -OutputDirectory (Join-Path $raw 'upgrade012-contracts')}
     }
     [xml]$trx=Get-Content (Join-Path $raw 'tests.trx') -Raw
     $report['Tests']=$trx.TestRun.ResultSummary.Counters | Select-Object total,passed,failed,notExecuted
@@ -120,6 +123,12 @@ try{
     if($Mode -ne 'Quick'){
         Invoke-Stage HouseMixedDpi {& "$PSScriptRoot/house-smoke.ps1" -OutputDirectory (Join-Path $raw 'house-mixed-dpi')}
         Invoke-Stage WpfSmoke {& "$PSScriptRoot/smoke.ps1"}
+        foreach($component in $components){
+            Invoke-Stage $component.Stage {
+                & "$PSScriptRoot/component-smoke.ps1" -Component $component.Stage -OutputDirectory (Join-Path $raw $component.Directory)
+                Assert-DesktopLifeComponentEvidence $report.BuildHashes $RunDirectory $component
+            }
+        }
         Invoke-Stage ShortStress {
             & "$PSScriptRoot/stress.ps1" -Seconds 600 -Label short -OutputDirectory $raw -Presence All -Floors 3
             Invoke-StressAnalysis short

@@ -40,6 +40,7 @@ public partial class PetWindow
     /// <summary>Exercises the production controller and gravity in an isolated smoke-test world.</summary>
     public void SmokeHouseTravel(string root)
     {
+        ValidateHouseFoodDiagnosticProfile(root);
         if(worldOwner is not null)throw new InvalidOperationException("House smoke must run on the shared world owner.");
         Directory.CreateDirectory(root);
         var residents=new[]{this}.Concat(sharedCharacters).ToArray();
@@ -281,6 +282,14 @@ public partial class PetWindow
                             actor.petGravity.PlaceSupported(actor.body.X,actor.body.Y,actor.BodyWidth,actor.BodyHeight,startFloor.Platform);
                             var failures=actor.NavigationFailures;var unreachable=actor.UnreachableTargets;var houseFailures=actor.HouseRouteFailures;
                             var timeouts=actor.ApproachTimeouts;var trips=actor.StairTrips;
+                            if(spec.Item3==RoomActivity.Feed)
+                            {
+                                // This case predates finite inventory. Keep every shifted
+                                // cross-floor navigation/support assertion, and test a bite
+                                // only when the real mouth can reach the actual bowl.
+                                SmokeHouseShiftedFoodSupport(actor,fixture,from,compact,offset,evidence);
+                                continue;
+                            }
                             actor.StartRoomActivity(spec.Item3);
                             var active=actor.sequence??throw new Exception("The shifted-furniture activity did not start.");
                             var supportFeet=spec.Item3==RoomActivity.Rest?fixture.Platforms[0].Y:floor.Y;
@@ -310,6 +319,25 @@ public partial class PetWindow
                         }
                         finally{actor.CancelRoute();actor.sequence=null;actor.Occupancy.Release(actor.appearance);Furniture.Remove(fixture);fixture.Close();fixture=null;platformCacheKey=int.MinValue;}
                     }
+                // Independently require a reachable, finite same-floor meal and
+                // reject a suspended full bowl at both normal and phone scale.
+                var cat=residents.Single(a=>a.appearance==PetAppearance.Cat);
+                foreach(var suspended in new[]{false,true})
+                {
+                    fixture=new RoomWindow(new(Guid.NewGuid(),FurnitureKind.CatBowl,floor.Left,floor.Y,1));
+                    fixture.SetSceneScale(layout.SceneScale);
+                    fixture.Relocate(floor.Left+(floor.Width-fixture.Width)*.45,floor.Y-fixture.Height-(suspended?120*layout.SceneScale:0));
+                    Furniture.Add(fixture);platformCacheKey=int.MinValue;
+                    try
+                    {
+                        cat.CancelRoute();cat.sequence=null;cat.homeTarget=null;cat.Occupancy.Release(cat.appearance);
+                        var start=layout.SafeFootX(1,floor.Left+floor.Width*.25,cat.HalfWidth);
+                        cat.body.Place(start-cat.HalfWidth,floor.Y-cat.BodyHeight,bounds);
+                        cat.petGravity.PlaceSupported(cat.body.X,cat.body.Y,cat.BodyWidth,cat.BodyHeight,floor.Platform);
+                        SmokeHouseShiftedFoodSupport(cat,fixture,1,compact,suspended?-120*layout.SceneScale:0,evidence,!suspended);
+                    }
+                    finally{cat.CancelRoute();cat.sequence=null;cat.Occupancy.Release(cat.appearance);Furniture.Remove(fixture);fixture.Close();fixture=null;platformCacheKey=int.MinValue;}
+                }
             }
         }
         finally

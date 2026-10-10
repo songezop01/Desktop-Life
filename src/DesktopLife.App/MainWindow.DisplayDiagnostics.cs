@@ -14,9 +14,11 @@ public partial class MainWindow
         var originalSettings=settings;var originalDisplay=DisplayWorkspace.Active;
         var originalPause=aiPaused;var originalPresence=CurrentPresence;var originalFloors=Pet.House?.FloorCount??1;
         var originalPositions=characterWindows.Select(character=>character.Position).ToArray();
+        var originalWindowVisible=IsVisible;var originalPriority=Priorities.SelectedItem;
         var inventory=DisplayWorkspace.Enumerate();var rows=new List<object>();
         try
         {
+            FreezeRestartVerification();Hide();Priorities.SelectedItem=DisplayPriority.Highest;
             SetPaused(true);foreach(var character in characterWindows)character.SetSimulationEnabled(false);
             PresenceOptions.SelectedIndex=(int)PresenceMode.All;
             foreach(var display in inventory)
@@ -85,16 +87,17 @@ public partial class MainWindow
                             throw new Exception("Fresh furniture contact geometry uses WPF screen coordinates instead of room coordinates.");
                     }
                     finally{fresh.Close();}
+                    var directInputs=await SmokeDisplayDirectInputs(root);
                     var imageName=$"display-{current.DeviceName.Replace("\\\\.\\","")}-{floors}-floors.png";
                     RenderHousePreview(Path.Combine(root,imageName));
                     rows.Add(new{current.Id,current.DeviceName,current.Label,current.Bounds,current.Scale,current.Adapter,current.PixelBounds,current.PixelWorkArea,current.Portrait,
-                        Floors=floors,house.SceneScale,Surfaces=surfaces,CharacterPaintBounds=paintBounds,GeneratedPreview=imageName});
+                        Floors=floors,house.SceneScale,Surfaces=surfaces,CharacterPaintBounds=paintBounds,DirectInputs=directInputs,GeneratedPreview=imageName});
                 }
             }
             File.WriteAllText(Path.Combine(root,"display-report.json"),JsonSerializer.Serialize(new
             {
                 Succeeded=true,VisitedDisplays=rows,WorkspaceRemaps,
-                Scope="Every fixed house preset on real connected monitors: character/furniture HWND, rendered feet, contact geometry, native DPI and workarea bounds. No physical phone disconnect, rotation, sleep or OS layout change performed."
+                Scope="Every fixed house preset on real connected monitors: native HWND/DPI/workarea, rendered feet, real hover/stroke, comb capture/contact and left-click food strips. No physical phone disconnect, rotation, sleep or OS layout change performed."
             },new JsonSerializerOptions{WriteIndented=true}));
         }
         finally
@@ -106,6 +109,7 @@ public partial class MainWindow
             for(var i=0;i<characterWindows.Length;i++)
             {characterWindows[i].RestorePosition(originalPositions[i]);characterWindows[i].SetSimulationEnabled(true);}
             SetPaused(originalPause);
+            Priorities.SelectedItem=originalPriority;if(originalWindowVisible)Show();
         }
     }
 }

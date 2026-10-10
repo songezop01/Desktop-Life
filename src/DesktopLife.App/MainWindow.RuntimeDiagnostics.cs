@@ -17,7 +17,7 @@ public partial class MainWindow
 
     private void InitializeRuntimeDiagnosticsUi(object sender, RoutedEventArgs e)
     {
-        if (runtimeDiagnostics is not null || Environment.GetCommandLineArgs().Any(argument => argument is "--diagnostic-worker" or "--smoke-test" or "--house-test" or "--stress-test" or "--performance-test" or "--restart-verify-test" or "--runtime-diagnostics-test" or "--food-test")) return;
+        if (runtimeDiagnostics is not null || Environment.GetCommandLineArgs().Any(argument => argument is "--diagnostic-worker" or "--smoke-test" or "--house-test" or "--stress-test" or "--performance-test" or "--restart-verify-test" or "--runtime-diagnostics-test" or "--food-test" or "--direct-care-test" or "--house-motion-test")) return;
         try
         {
             runtimeDiagnostics = new DiagnosticRunCoordinator();

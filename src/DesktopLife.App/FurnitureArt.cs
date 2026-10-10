@@ -97,6 +97,14 @@ public static class FurnitureArt
         if(removeStaticTeaser&&kind==FurnitureKind.CatTree)drawing.Pop();
         return true;
     }
+    internal static bool PaintedAt(FurnitureKind kind,Point point,double width,double height)
+    {
+        EnsureLoaded();if(!assets.TryGetValue(kind,out var asset))return false;
+        var bounds=Bounds(asset,width,height);if(!bounds.Contains(point))return false;
+        var x=Math.Clamp((int)((point.X-bounds.X)/bounds.Width*asset.Frame.Width),0,asset.Frame.Width-1);
+        var y=Math.Clamp((int)((point.Y-bounds.Y)/bounds.Height*asset.Frame.Height),0,asset.Frame.Height-1);
+        return asset.Frame.Alpha[y*asset.Frame.Width+x]>=24;
+    }
     public static object Diagnostic
     {
         get
@@ -113,7 +121,8 @@ public sealed class FurnitureSpriteVisual : FrameworkElement
     private readonly FurnitureKind kind;
     private readonly bool foreground;
     private readonly bool removeStaticTeaser;
-    public FurnitureSpriteVisual(FurnitureKind kind, double width, double height, bool foreground = false,bool removeStaticTeaser=false)
-    { this.kind = kind; this.foreground = foreground;this.removeStaticTeaser=removeStaticTeaser; Width = width; Height = height; IsHitTestVisible = false; RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality); }
+    public FurnitureSpriteVisual(FurnitureKind kind, double width, double height, bool foreground = false,bool removeStaticTeaser=false,bool interactive=false)
+    { this.kind = kind; this.foreground = foreground;this.removeStaticTeaser=removeStaticTeaser; Width = width; Height = height; IsHitTestVisible = interactive; RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality); }
     protected override void OnRender(DrawingContext drawing) => FurnitureArt.Draw(drawing, kind, Width, Height, foreground,removeStaticTeaser);
+    protected override HitTestResult? HitTestCore(PointHitTestParameters parameters)=>FurnitureArt.PaintedAt(kind,parameters.HitPoint,Width,Height)?new PointHitTestResult(this,parameters.HitPoint):null;
 }

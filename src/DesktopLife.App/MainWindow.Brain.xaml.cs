@@ -15,7 +15,7 @@ public partial class MainWindow
     {
         Pet.AutonomousIntent=automaticActions;TickIdentity();
         Pet.Routine.Advance(elapsed,Pet.PhysiologicalAction);
-        if(Pet.Interacting||Pet.EditingRoom)return;
+        if(Pet.Interacting||Pet.DirectCareHolding||Pet.EditingRoom)return;
         if((Life.State.Energy<=10||Life.State.Fatigue>=95)&&Pet.CurrentAction!=BodyAction.Sleep)
         {Pet.RequestAction(BodyAction.Sleep,BehaviorInterruptReason.CriticalNeed);return;}
         if(lifeClock.Elapsed.TotalSeconds<careUntil)return;

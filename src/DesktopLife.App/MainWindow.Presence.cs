@@ -9,8 +9,10 @@ public partial class MainWindow
     private CharacterRuntime[] secondaryCharacters=[];
     private PetWindow[] characterWindows=[];
     private static readonly PetAppearance[] careKinds=[PetAppearance.Cat,PetAppearance.Girl,PetAppearance.BorderCollie];
+    // Kept for existing diagnostics: this selects a data profile, never a care recipient.
     private PetAppearance careTarget;
     private bool presenceReady;
+    private bool profileSelectionUpdating;
     private double lastAwareness;
     private PresenceMode CurrentPresence=>settings.Presence??PresencePolicy.Only(settings.PetAppearance);
     private CharacterRuntime? RuntimeFor(PetAppearance kind)=>secondaryCharacters.FirstOrDefault(character=>character.Kind==kind);
@@ -45,7 +47,7 @@ public partial class MainWindow
         foreach(var character in secondaryCharacters)
         {
             character.Window.CareRequested+=kind=>{SelectCare(character.Kind);CareSelected(kind);};
-            character.Window.Hit+=button=>{SelectCare(character.Kind);if(button!=RewardButton.Middle)CareSelected(CareKind.Pet);};
+            character.Window.Hit+=_=>SelectCare(character.Kind);
             character.Window.SoundRequested+=(sound,strength)=>audio?.Play(sound,strength);
             character.Window.PreviewMouseDown+=(_,_)=>SelectCare(character.Kind);
         }
@@ -56,43 +58,46 @@ public partial class MainWindow
     }
     private void RefreshCareNames()
     {
-        var ready=presenceReady;presenceReady=false;
-        CareTargetOptions.ItemsSource=careKinds.Select(kind=>$"{CompanionFor(kind).Name}（{UiText.Label(kind)}）").ToArray();
-        CareTargetOptions.SelectedIndex=Array.IndexOf(careKinds,careTarget);
-        presenceReady=ready;
+        CatProfileName.Text=CompanionFor(PetAppearance.Cat).Name;
+        GirlProfileName.Text=CompanionFor(PetAppearance.Girl).Name;
+        DogProfileName.Text=CompanionFor(PetAppearance.BorderCollie).Name;
+        foreach(var kind in careKinds)
+            ProfileCard(kind).ToolTip=$"查看{CompanionFor(kind).Name}的資料與回憶";
+    }
+    private RadioButton ProfileCard(PetAppearance kind)=>kind switch
+    {PetAppearance.Cat=>CatProfileCard,PetAppearance.Girl=>GirlProfileCard,PetAppearance.BorderCollie=>DogProfileCard,_=>throw new ArgumentOutOfRangeException(nameof(kind))};
+    private void ChooseCharacterProfile(object sender,RoutedEventArgs e)
+    {
+        if(!presenceReady||profileSelectionUpdating||sender is not RadioButton {IsChecked:true} card
+            ||!Enum.TryParse<PetAppearance>(card.Tag?.ToString(),out var kind))return;
+        SelectCare(kind);
     }
     private void SelectCare(PetAppearance kind)
     {
-        careTarget=kind;CareTargetOptions.SelectedIndex=Array.IndexOf(careKinds,kind);UpdateCareTarget();
+        careTarget=kind;UpdateCareTarget();
     }
     private void UpdateCareTarget()
     {
-        var girl=careTarget==PetAppearance.Girl;
-        FeedButton.Content=girl?"用餐":"餵飯";StrokeButton.Content=girl?"互動":"摸摸";
-        PlayButton.Content=girl?"活動":"陪玩";GroomButton.Content=girl?"整理頭髮":"梳理";
-        GroomButton.IsEnabled=true;RestButton.Content="休息";
+        profileSelectionUpdating=true;
+        try{ProfileCard(careTarget).IsChecked=true;}
+        finally{profileSelectionUpdating=false;}
         PetName.Text=SelectedCompanion.Name;
+        // The hidden presentation shim must follow the profile before priority changes.
+        // careTarget is already assigned, so ChangePresentation cannot change presence.
         if(Appearances.SelectedItem is not PetAppearance shown||shown!=careTarget)Appearances.SelectedItem=careTarget;
-        ShowCompanion();ShowHomeostasis();
+        ShowCompanion(force:true);ShowHomeostasis();
     }
-    private void ChangeCareTarget(object sender,SelectionChangedEventArgs e)
-    {if(!presenceReady||CareTargetOptions.SelectedIndex<0)return;careTarget=careKinds[CareTargetOptions.SelectedIndex];UpdateCareTarget();}
     private void ChangePresence(object sender,SelectionChangedEventArgs e)
     {
         if(!presenceReady||PresenceOptions.SelectedIndex<0)return;
         settings=settings with{Presence=(PresenceMode)PresenceOptions.SelectedIndex};settingsStore.Save(settings);
-        if(!PresencePolicy.Includes(CurrentPresence,careTarget))SelectCare(careKinds.First(kind=>PresencePolicy.Includes(CurrentPresence,kind)));
-        UpdatePetVisibility();QueuePetSave();
+        UpdatePetVisibility();ShowCompanion();QueuePetSave();
     }
     private void CareSelected(CareKind kind)
     {
-        if(!PresencePolicy.Includes(CurrentPresence,careTarget)){CareStatus.Text="請先顯示要照顧的角色。";return;}
-        // Choosing a care action finishes furniture placement for the whole room.
-        // The normal checkbox handler updates every resident immediately.
-        if(EditRoom.IsChecked==true)EditRoom.IsChecked=false;
-        if(RuntimeFor(careTarget) is {} character)
-        {CareStatus.Text=character.Care(kind,out var accepted);character.Window.ShowCareFeedback(CareStatus.Text);if(accepted)SetPaused(false);ShowCompanion();ShowHomeostasis();QueuePetSave();return;}
-        Care(kind);
+        // Compatibility entry point for old callers; actual contact owns all effects.
+        CareStatus.Text=LegacyCareGuidance(kind,careTarget);
+        CharacterWindow(careTarget).ShowCareFeedback(CareStatus.Text);
     }
     private void TickOther(double dt)
     {

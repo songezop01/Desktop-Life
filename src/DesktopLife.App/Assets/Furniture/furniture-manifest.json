@@ -314,6 +314,17 @@
         186
       ],
       "supports": []
+    },
+    {
+      "kind": "Comb",
+      "sheet": "comb-v1.png",
+      "rect": [
+        0,
+        0,
+        1983,
+        793
+      ],
+      "supports": []
     }
   ]
 }

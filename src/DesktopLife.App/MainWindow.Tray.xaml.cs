@@ -18,13 +18,21 @@ public partial class MainWindow
         Add("暫停",()=>SetPaused(true));Add("繼續",()=>SetPaused(false));
         Add("控制台",()=>{Show();WindowState=WindowState.Normal;Activate();});
         Add("清除作品",()=>{Pet.Art.ClearWorks();QueuePetSave();});
-        Add("重設位置",()=>CharacterWindow(careTarget).ResetPosition());
+        var resetPositions=new Forms.ToolStripMenuItem("重設角色位置");
+        foreach(var kind in careKinds)
+        {
+            var resident=kind;
+            var item=new Forms.ToolStripMenuItem($"{CompanionFor(resident).Name}（{UiText.Label(resident)}）");
+            item.Click+=(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(()=>ResetProfilePosition(resident)));
+            resetPositions.DropDownItems.Add(item);
+            resetPositions.DropDownOpening+=(_,_)=>item.Text=$"{CompanionFor(resident).Name}（{UiText.Label(resident)}）";
+        }
+        menu.Items.Add(resetPositions);
         Add("恢復桌面圖示排列",()=>RestoreDesktopIcons(this,new RoutedEventArgs()));
-        Add("餵飯",()=>CareSelected(CareKind.Feed));Add("摸摸",()=>CareSelected(CareKind.Pet));Add("陪玩",()=>CareSelected(CareKind.Play));
         var layers=new Forms.ToolStripMenuItem("顯示層級");
         foreach(var priority in Enum.GetValues<DisplayPriority>())layers.DropDownItems.Add(UiText.Label(priority),null,(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(()=>Priorities.SelectedItem=priority)));
         menu.Items.Add(layers);
-        var looks=new Forms.ToolStripMenuItem("桌寵外觀");
+        var looks=new Forms.ToolStripMenuItem("陪伴的角色");
         foreach(var mode in Enum.GetValues<PresenceMode>())looks.DropDownItems.Add(PresenceLabel(mode),null,(_,_)=>Dispatcher.Invoke(()=>InvokeTrayAction(()=>PresenceOptions.SelectedIndex=(int)mode)));
         menu.Items.Add(looks);Add("結束",()=>RequestExit());
         tray=new Forms.NotifyIcon{Text="Desktop Life",Icon=System.Drawing.SystemIcons.Application,ContextMenuStrip=menu,Visible=true};

@@ -80,15 +80,49 @@ public partial class MainWindow
     }
     public bool SmokeReward()
     {
-        var before=Learning.State.PositiveRewards;
-        var careBefore=Learning.State.Companion.CareCount;
-        Pet.SmokeClickAt(new System.Windows.Point(0,Pet.Height-2),System.Windows.Input.MouseButton.Left);
-        if (Learning.State.PositiveRewards!=before) return false;
-        Pet.SmokeClickAt(Pet.DiagnosticHitPoint(),System.Windows.Input.MouseButton.Left);
-        var passed=Learning.State.PositiveRewards==before+1 && Learning.State.ActionPreference.Values.Any(v=>v>0)
-            && Learning.State.Companion.CareCount==careBefore+1 && Pet.CurrentAction==BodyAction.Nuzzle
-;
-        if(!passed)throw new Exception($"Reward diagnostic: positive {before}->{Learning.State.PositiveRewards}, visible {Pet.IsVisible}, trace {Learning.LastCredits.Count}, action {Pet.CurrentAction}, drag {Pet.DragDiagnostic}, target {Pet.InputHitTest(Pet.DiagnosticHitPoint())?.GetType().Name}; {HitStatus.Text}");
-        return true;
+        var originalPresence=CurrentPresence;var originalProfile=careTarget;var originalPause=aiPaused;var originalHidden=userHidden;
+        var controllerVisible=IsVisible;var primary=settings.PetAppearance;
+        var positions=careKinds.ToDictionary(kind=>kind,kind=>CharacterWindow(kind).Position);
+        Hide();
+        try
+        {
+            userHidden=false;PresenceOptions.SelectedIndex=(int)PresenceMode.All;UpdatePetVisibility();SetPaused(false);
+            foreach(var kind in careKinds)PrepareDirectCareSubset(kind);
+            var beforeClick=DirectCareFingerprint(primary);
+            // Transparent pixels and painted-character clicks are no longer care
+            // or reward buttons. Both must leave learning and needs untouched.
+            Pet.SmokeClickAt(new System.Windows.Point(0,Pet.Height-2),System.Windows.Input.MouseButton.Left);
+            Pet.SmokeClickAt(Pet.DiagnosticHitPoint(),System.Windows.Input.MouseButton.Left);
+            if(DirectCareFingerprint(primary)!=beforeClick)throw new Exception("Legacy character click still grants a reward or care");
+            PrepareDirectCareSubset(primary);
+            Learning.State.Companion.LastCare.Remove(CareKind.Pet);
+            var point=Pet.DirectHeadDiagnosticPoint();var stationary=DirectCareFingerprint(primary);
+            for(var i=0;i<20;i++)Pet.SampleDirectCareDiagnostic(point,.033);
+            if(!Pet.HoverHandVisible||DirectCareFingerprint(primary)!=stationary)
+                throw new Exception("Stationary hover granted a learning reward or lost the hand");
+            Pet.SampleDirectCareDiagnostic(null,.033);
+            var before=Learning.State.PositiveRewards;var careBefore=Learning.State.Companion.CareCount;
+            var preference=Learning.State.ActionPreference.GetValueOrDefault(BodyAction.Sit);
+            var others=careKinds.Where(kind=>kind!=primary).ToDictionary(kind=>kind,DirectCareFingerprint);
+            Learning.Trace.Clear();Learning.Trace.Observe(new(lifeClock.Elapsed.TotalSeconds,BodyAction.Sit,ActionCategory.Rest,
+                LearningContext.UserNearby,1,[],[]));
+            SampleDirectCareStroke(primary,point);
+            if(Learning.State.PositiveRewards!=before+1||Learning.State.Companion.CareCount!=careBefore+1
+                ||Learning.LastCredits.Count==0||Learning.State.ActionPreference.GetValueOrDefault(BodyAction.Sit)<=preference)
+                throw new Exception($"Actual stroke did not reinforce a real eligibility trace: positive {before}->{Learning.State.PositiveRewards}, care {careBefore}->{Learning.State.Companion.CareCount}, credits {Learning.LastCredits.Count}");
+            if(others.Any(pair=>DirectCareFingerprint(pair.Key)!=pair.Value))throw new Exception("Primary stroke rewarded another resident");
+            var accepted=DirectCareFingerprint(primary);
+            Pet.SampleDirectCareDiagnostic(null,.033);SampleDirectCareStroke(primary,point);
+            if(DirectCareFingerprint(primary)!=accepted)throw new Exception("Cooldown stroke granted another learning reward");
+            if(!SavePetState()||!VerifyPetSave())throw new Exception("Accepted physical-contact learning did not persist");
+            return true;
+        }
+        finally
+        {
+            foreach(var kind in careKinds)
+            {var actor=CharacterWindow(kind);actor.CancelDirectCare();actor.ResetPosition();actor.RestorePosition(positions[kind]);actor.SetSimulationEnabled(!verificationFrozen);}
+            userHidden=originalHidden;PresenceOptions.SelectedIndex=(int)originalPresence;UpdatePetVisibility();SelectCare(originalProfile);SetPaused(originalPause);
+            if(controllerVisible)Show();
+        }
     }
 }

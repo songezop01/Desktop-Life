@@ -44,24 +44,25 @@ public sealed partial class RoomWindow : Window
         if(item.Kind==FurnitureKind.CatTree)Teaser=new();
         WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=null;ShowActivated=false;ShowInTaskbar=false;ResizeMode=ResizeMode.NoResize;
         Title="房間家具 · "+UiText.Label(item.Kind);Content=canvas;Draw();Place(item.X,item.Y);
-        SourceInitialized+=(_,_)=>{DesktopInteraction.MakeNonActivating(new WindowInteropHelper(this).Handle);Place(Item.X,Item.Y);SetEditing(editing);};
-        drag=new(this,canvas,_=>{},(x,y)=>Place(x,y),_=>Changed?.Invoke(),()=>editing);
+        SourceInitialized+=(_,_)=>{DesktopInteraction.MakeNonActivating(new WindowInteropHelper(this).Handle);AttachSurfaceInput();Place(Item.X,Item.Y);SetEditing(editing);};
+        drag=new(this,canvas,held=>SetCombHeld(held),(x,y)=>{if(editing)Place(x,y);else MoveComb(x,y);},_=>{if(editing)Changed?.Invoke();},()=>editing||IsCombTool);
         var menu=new ContextMenu();var remove=new MenuItem{Header="收起這件家具"};remove.Click+=(_,_)=>Removed?.Invoke(this);menu.Items.Add(remove);canvas.ContextMenu=menu;
         InitializeFoodSurface();
+        InitializeTeaserSurface();
     }
     public static (double Width,double Height) Size(FurnitureKind kind)=>kind switch
-    {FurnitureKind.HumanBed=>(280,110),FurnitureKind.Sofa=>(260,120),FurnitureKind.Chair=>(110,145),FurnitureKind.DiningTable=>(250,160),FurnitureKind.Computer=>(110,90),FurnitureKind.DrawingBook=>(100,28),FurnitureKind.LegoBox=>(130,65),FurnitureKind.CatBowl=>(80,28),FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),_=>(140,45)};
+    {FurnitureKind.HumanBed=>(280,110),FurnitureKind.Sofa=>(260,120),FurnitureKind.Chair=>(110,145),FurnitureKind.DiningTable=>(250,160),FurnitureKind.Computer=>(110,90),FurnitureKind.DrawingBook=>(100,28),FurnitureKind.LegoBox=>(130,65),FurnitureKind.CatBowl=>(80,28),FurnitureKind.Comb=>(120,40),FurnitureKind.CatTree=>(180,230),FurnitureKind.Slide=>(260,190),FurnitureKind.Desk=>(230,160),FurnitureKind.Bookshelf=>(180,220),FurnitureKind.Box=>(160,100),FurnitureKind.Scratcher=>(160,35),FurnitureKind.PetBed=>(170,55),_=>(140,45)};
     public void SetEditing(bool value)
     {
         if(editing==value&&editingApplied)return;
-        editing=value;canvas.IsHitTestVisible=value||IsFoodSurface;Opacity=value?.8:1;
-        canvas.Background=value||!IsFoodSurface?Brushes.Transparent:null;
+        CancelCombDrag();CancelTeaserInput();editing=value;canvas.IsHitTestVisible=value||IsFoodSurface||IsCombTool||Teaser is not null;Opacity=value?.8:1;
+        canvas.Background=value||(!IsFoodSurface&&!IsCombTool&&Teaser is null)?Brushes.Transparent:null;
         var handle=new WindowInteropHelper(this).Handle;
-        if(handle!=0){DesktopInteraction.SetClickThrough(handle,!value&&!IsFoodSurface);editingApplied=true;}
+        if(handle!=0){DesktopInteraction.SetClickThrough(handle,!value&&!IsFoodSurface&&!IsCombTool&&Teaser is null);editingApplied=true;}
     }
     private void Place(double x,double y)
     {
-        var r=DisplayWorkspace.Bounds;x=Math.Clamp(x,r.Left,Math.Max(r.Left,r.Left+r.Width-Width));y=Math.Clamp(y,r.Top,Math.Max(r.Top,r.Top+r.Height-Height));
+        CancelCombDrag();var r=DisplayWorkspace.Bounds;x=Math.Clamp(x,r.Left,Math.Max(r.Left,r.Left+r.Width-Width));y=Math.Clamp(y,r.Top,Math.Max(r.Top,r.Top+r.Height-Height));
         Item=Item with{X=x,Y=y};DisplayWorkspace.Position(this,x,y);
     }
     public void Relocate(double x,double y)=>Place(x,y);
@@ -86,7 +87,7 @@ public sealed partial class RoomWindow : Window
         FurnitureKind.Sofa=>[new(Item.X+20,220,Item.Y+67,Item.Y+67)],
         FurnitureKind.Chair=>[new(Item.X+10,90,Item.Y+80,Item.Y+80)],
         FurnitureKind.DiningTable=>[new(Item.X+5,240,Item.Y+22,Item.Y+22)],
-        FurnitureKind.Computer or FurnitureKind.DrawingBook or FurnitureKind.LegoBox or FurnitureKind.CatBowl=>[],
+        FurnitureKind.Computer or FurnitureKind.DrawingBook or FurnitureKind.LegoBox or FurnitureKind.CatBowl or FurnitureKind.Comb=>[],
         FurnitureKind.PetBed=>[new(Item.X+15,140,Item.Y+28,Item.Y+28)],
         FurnitureKind.Scratcher=>[new(Item.X+10,140,Item.Y+16,Item.Y+16)],
         FurnitureKind.Box=>[new(Item.X+18,124,Item.Y+94,Item.Y+94)],
@@ -103,6 +104,7 @@ public sealed partial class RoomWindow : Window
         var anchor=TeaserAnchor;teaserString.X1=anchor.X;teaserString.Y1=anchor.Y;
         teaserString.X2=anchor.X+Teaser.X;teaserString.Y2=anchor.Y+Teaser.Y;
         Canvas.SetLeft(teaserBall,teaserString.X2-9);Canvas.SetTop(teaserBall,teaserString.Y2-9);
+        UpdateTeaserHit();
     }
     private IReadOnlyList<RoomPlatform> BuildPlatforms()
     {
@@ -115,7 +117,7 @@ public sealed partial class RoomWindow : Window
     private void Draw()
     {
         if(FurnitureArt.LoadedCount==0){DrawLegacy();return;}
-        var size=Size(Item.Kind);canvas.Children.Add(new FurnitureSpriteVisual(Item.Kind,size.Width,size.Height,removeStaticTeaser:Teaser is not null));
+        var size=Size(Item.Kind);canvas.Children.Add(new FurnitureSpriteVisual(Item.Kind,size.Width,size.Height,removeStaticTeaser:Teaser is not null,interactive:IsCombTool));
         if(Teaser is not null){canvas.Children.Add(teaserString);canvas.Children.Add(teaserBall);StepTeaser(0);}
     }
     private void DrawLegacy()

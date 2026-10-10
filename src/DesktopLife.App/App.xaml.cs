@@ -26,13 +26,16 @@ public partial class App : Application
         if(e.Args.Contains("--icons-read-test")||e.Args.Contains("--icons-restore-test"))
         {Shutdown(IconIntegrationCheck.Run(e.Args.Contains("--icons-restore-test")));return;}
         var smoke = e.Args.Contains("--smoke-test");
-        var house=e.Args.Contains("--house-test");
+        var displayInputTest=e.Args.Contains("--display-input-test");
+        var house=e.Args.Contains("--house-test")||displayInputTest;
         var stress=e.Args.Contains("--stress-test");
         var performance=e.Args.Contains("--performance-test");
         var restart=e.Args.Contains("--restart-verify-test");
         var runtimeDiagnosticsTest=e.Args.Contains("--runtime-diagnostics-test");
         var foodTest=e.Args.Contains("--food-test");
-        var root = diagnosticWorker?.ProfileDirectory ?? (smoke||house||performance||stress||runtimeDiagnosticsTest||foodTest ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
+        var directCareTest=e.Args.Contains("--direct-care-test");
+        var houseMotionTest=e.Args.Contains("--house-motion-test");
+        var root = diagnosticWorker?.ProfileDirectory ?? (smoke||house||performance||stress||runtimeDiagnosticsTest||foodTest||directCareTest||houseMotionTest ? Path.Combine(Path.GetTempPath(), "DesktopLifeSmoke", Guid.NewGuid().ToString("N"))
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopLife"));
         if(restart)
         {
@@ -50,13 +53,23 @@ public partial class App : Application
             return;
         }
         var log = new FileAppLog(Path.Combine(root, "logs", "app.log"));
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            try { log.Write("Unhandled process exception: " + args.ExceptionObject); } catch { }
+        };
+        DispatcherUnhandledException += (_, args) =>
+        {
+            try { log.Write("Unhandled UI exception: " + args.Exception); } catch { }
+            if (smoke || house || stress || performance || restart || runtimeDiagnosticsTest || foodTest || directCareTest || houseMotionTest)
+            { args.Handled = true; Shutdown(2); }
+        };
         try
         {
             Directory.CreateDirectory(root);
-            if(smoke||house||stress||performance||restart||runtimeDiagnosticsTest||foodTest)File.WriteAllText(Path.Combine(root,"diagnostic-process.json"),System.Text.Json.JsonSerializer.Serialize(new{ProcessId=Environment.ProcessId,StartedUtc=DateTimeOffset.UtcNow,Executable=Environment.ProcessPath,Arguments=e.Args}));
+            if(smoke||house||stress||performance||restart||runtimeDiagnosticsTest||foodTest||directCareTest||houseMotionTest)File.WriteAllText(Path.Combine(root,"diagnostic-process.json"),System.Text.Json.JsonSerializer.Serialize(new{ProcessId=Environment.ProcessId,StartedUtc=DateTimeOffset.UtcNow,Executable=Environment.ProcessPath,Arguments=e.Args}));
             // Prevent two instances from overwriting the same organism's state.
             try { instanceLock = new FileStream(Path.Combine(root,"instance.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None); }
-            catch(IOException) when(!smoke&&!house&&!performance&&!stress&&!runtimeDiagnosticsTest&&!foodTest)
+            catch(IOException) when(!smoke&&!house&&!performance&&!stress&&!runtimeDiagnosticsTest&&!foodTest&&!directCareTest&&!houseMotionTest)
             {
                 if(AppInstanceChannel.SendAsync(root,AppInstanceChannel.Command.Activate).GetAwaiter().GetResult())
                 {Shutdown();return;}
@@ -85,13 +98,29 @@ public partial class App : Application
             MainWindow = window;
             if(restart)window.FreezeRestartVerification();
             window.Show();
-            if(!smoke&&!house&&!performance&&!stress&&!restart&&!runtimeDiagnosticsTest&&!foodTest)
+            if(!smoke&&!house&&!performance&&!stress&&!restart&&!runtimeDiagnosticsTest&&!foodTest&&!directCareTest&&!houseMotionTest)
                 instanceChannel=new AppInstanceChannel(root,command=>Dispatcher.BeginInvoke(new Action(()=>
                 {
                     if(command==AppInstanceChannel.Command.Shutdown)window.RequestExit();
                     else {window.Show();window.WindowState=WindowState.Normal;window.Activate();}
                 })));
             if(smoke||house||performance||stress)window.BeginDiagnostic();
+            if(houseMotionTest)
+            {
+                Dispatcher.BeginInvoke(new Action(async()=>
+                {
+                    try {window.FreezeRestartVerification();window.Hide();window.Pet.SuspendPresence();await PetWindow.SmokeHouseMotion012(root);log.Write("House motion components PASS (not elapsed stress).");window.RequestExit();}
+                    catch(Exception ex){log.Write("House motion components FAIL: "+ex);Shutdown(2);}
+                }),DispatcherPriority.ApplicationIdle);
+            }
+            if(directCareTest)
+            {
+                Dispatcher.BeginInvoke(new Action(async()=>
+                {
+                    try {await window.SmokeDirectCare(root);log.Write("Direct interaction components PASS (not elapsed stress).");window.RequestExit();}
+                    catch(Exception ex){log.Write("Direct interaction components FAIL: "+ex);Shutdown(2);}
+                }),DispatcherPriority.ApplicationIdle);
+            }
             if(foodTest)
             {
                 Dispatcher.BeginInvoke(new Action(async()=>
@@ -184,7 +213,8 @@ public partial class App : Application
                     {
                         await window.RunHomeStress(root,duration,stressPresence,stressFloors,diagnosticWorker?.Cancellation??CancellationToken.None,
                             diagnosticWorker is null?null:(elapsed,characters)=>diagnosticWorker.Progress(elapsed,characters,characters.StartsWith("場景完成；",StringComparison.Ordinal)?"保存及重載核對":"三角色小屋場景"),exitWhenFinished:diagnosticWorker is null);
-                        log.Write("Stress PASS: "+stressPresence);
+                        log.Write(duration>=600?"Stress PASS: "+stressPresence:
+                            "Stress setup completed: "+duration+" seconds; required interaction coverage was not asserted.");
                         if(diagnosticWorker is not null){diagnosticWorker.Finish(DiagnosticRunState.Passed);window.RequestExit();}
                     }
                     catch(OperationCanceledException) when(diagnosticWorker?.Cancellation.IsCancellationRequested==true)
@@ -208,19 +238,22 @@ public partial class App : Application
                     {
                         await Task.Delay(900);
                         window.SmokeIllustrations(root);
-                        window.Pet.SmokeHouseTravel(root);
-                        window.Pet.SmokeHouseToyFloor(root);
-                        window.Pet.SmokeHouseSequences(root);
-                        window.Pet.SmokeScaledToyContacts(root);
-                        window.Pet.SmokeLowToySupports(root);
-                        window.Pet.SmokeHouseMovingGoals(root);
+                        if(!displayInputTest)
+                        {
+                            window.Pet.SmokeHouseTravel(root);
+                            window.Pet.SmokeHouseToyFloor(root);
+                            window.Pet.SmokeHouseSequences(root);
+                            window.Pet.SmokeScaledToyContacts(root);
+                            window.Pet.SmokeLowToySupports(root);
+                            window.Pet.SmokeHouseMovingGoals(root);
+                        }
                         window.PrepareHousePreview(root);
                         await window.SmokeDisplays(root);
                         window.RenderHousePreview(Path.Combine(root,"house-final.png"));
                         if(!await window.SavePetStateAsync())throw new IOException("House diagnostic save failed");
                         var loaded=snapshots.Load();loaded.Validate();
-                        File.WriteAllText(Path.Combine(root,"house-summary.json"),System.Text.Json.JsonSerializer.Serialize(new{Succeeded=true,Schema=loaded.SchemaVersion,LoadedFloors=loaded.Learning.Room.FloorCount,CompletedUtc=DateTimeOffset.UtcNow,InstalledDataTouched=false}));
-                        log.Write("House PASS: production floors, stairs, proportions, native mixed-DPI placements and schema roundtrip");window.RequestExit();
+                        File.WriteAllText(Path.Combine(root,displayInputTest?"display-input-summary.json":"house-summary.json"),System.Text.Json.JsonSerializer.Serialize(new{Succeeded=true,Scope=displayInputTest?"Connected display geometry and direct inputs only":"Production house routes, connected displays and schema roundtrip",Schema=loaded.SchemaVersion,LoadedFloors=loaded.Learning.Room.FloorCount,CompletedUtc=DateTimeOffset.UtcNow,InstalledDataTouched=false}));
+                        log.Write(displayInputTest?"Display inputs PASS: actual connected displays and fixed floor presets":"House PASS: production floors, stairs, proportions, native mixed-DPI placements and schema roundtrip");window.RequestExit();
                     }
                     catch(Exception ex){log.Write("House FAIL: "+ex);Shutdown(2);}
                 }),DispatcherPriority.ApplicationIdle);
@@ -265,7 +298,7 @@ public partial class App : Application
                         log.Write("Smoke PASS: live homeostasis; state save/load; routed hitbox reward; companion care; presence-only sensor; windows; action poses; hide/show/reset.");
                         window.RequestExit();
                     }
-                    catch (Exception ex) { log.Write("Smoke FAIL: " + ex.Message);window.Pet.RenderDiagnosticArt(Path.Combine(root,"failed-art.png")); Shutdown(2); }
+                    catch (Exception ex) { log.Write("Smoke FAIL: " + ex);window.Pet.RenderDiagnosticArt(Path.Combine(root,"failed-art.png")); Shutdown(2); }
                 };
                 timer.Start();
             }

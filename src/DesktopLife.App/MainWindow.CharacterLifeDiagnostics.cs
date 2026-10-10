@@ -137,7 +137,8 @@ public partial class MainWindow
         var girl=settings.PetAppearance==PetAppearance.Girl?Pet:other.Window;
         PresenceOptions.SelectedIndex=(int)PresenceMode.Both;UpdatePetVisibility();
         Pet.Art.ResetCreationCooldownsForSmoke();
-        foreach(var activity in Enum.GetValues<RoomActivity>())girl.SmokeLifePose(activity,Path.Combine(root,"girl-life-"+activity+".png"));
+        foreach(var activity in Enum.GetValues<RoomActivity>().Where(activity=>activity!=RoomActivity.Feed))girl.SmokeLifePose(activity,Path.Combine(root,"girl-life-"+activity+".png"));
+        SmokeGirlMealLifePose(girl,root);
         var cat=settings.PetAppearance==PetAppearance.Cat?Pet:other.Window;
         girl.SmokeSleepIdentity();cat.SmokeSleepIdentity();
         foreach(var f in Pet.Furniture.Where(f=>f.Item.Kind is FurnitureKind.HumanBed or FurnitureKind.Sofa or FurnitureKind.Desk))
@@ -157,34 +158,62 @@ public partial class MainWindow
         try
         {
             userHidden=false;PresenceOptions.SelectedIndex=(int)PresenceMode.All;UpdatePetVisibility();SetPaused(false);automaticActions=true;
-            foreach(var window in characterWindows)window.ResetPosition();
-            Life.ApplyCare(Life.State with{Energy=80,Fatigue=20});
-            Learning.State.Companion.LastCare.Remove(CareKind.Rest);Care(CareKind.Rest);
-            if(careUntil-lifeClock.Elapsed.TotalSeconds<80||Pet.CurrentAction!=BodyAction.Sleep)throw new Exception("Primary rest hold fixture failed");
-            runningAction=new(BodyAction.Sleep);runningAction.Start(Pet);var previousAction=runningAction;
+            foreach(var window in characterWindows){window.ResetPosition();window.CancelDirectCare();}
+            var beforeRest=careKinds.ToDictionary(kind=>kind,kind=>(CompanionFor(kind).CareCount,CompanionFor(kind).Bond,
+                RestAt:CompanionFor(kind).LastCare.GetValueOrDefault(CareKind.Rest),HadRest:CompanionFor(kind).LastCare.ContainsKey(CareKind.Rest)));
+            Life.ApplyCare(Life.State with{Energy=5,Fatigue=98});careUntil=0;
+            TickBrain(.25);
+            if(Pet.CurrentAction!=BodyAction.Sleep)throw new Exception("Critical fatigue did not autonomously request primary sleep");
             foreach(var character in secondaryCharacters)
             {
-                character.Life.ApplyCare(character.Life.State with{Energy=80,Fatigue=20});character.Learning.State.Companion.LastCare.Remove(CareKind.Rest);
-                character.Care(CareKind.Rest,out var accepted);
-                if(!accepted||character.CareHoldRemainingSeconds<80)throw new Exception("Secondary rest hold fixture failed");
+                character.Life.ApplyCare(character.Life.State with{Energy=5,Fatigue=98});character.Tick(.25,null,paused:false,quiet:false);
+                if(character.Window.CurrentAction!=BodyAction.Sleep)throw new Exception("Critical fatigue did not autonomously request secondary sleep");
             }
-            var careEvidence=companions.ToDictionary(pair=>pair.Key,pair=>(pair.Value.CareCount,pair.Value.Bond,RestCareAt:pair.Value.LastCare[CareKind.Rest]));
-            SetPaused(true);userHidden=true;UpdatePetVisibility();
-            if(!aiPaused||secondaryCharacters.Any(character=>!character.Paused))throw new Exception("Hiding canceled user pause");
-            if(careUntil>lifeClock.Elapsed.TotalSeconds||runningAction is not null||previousAction.Running||secondaryCharacters.Any(character=>character.CareHoldRemainingSeconds>0||character.HasActiveDecision))throw new Exception("Hiding retained canceled care hold or decision");
             foreach(var kind in careKinds)
             {
-                var companion=CompanionFor(kind);var expected=careEvidence[kind];
-                if(companion.CareCount!=expected.CareCount||companion.Bond!=expected.Bond||companion.LastCare[CareKind.Rest]!=expected.RestCareAt)throw new Exception("Hiding erased care cooldown history");
+                var companion=CompanionFor(kind);var before=beforeRest[kind];
+                if(companion.CareCount!=before.CareCount||companion.Bond!=before.Bond
+                    ||companion.LastCare.ContainsKey(CareKind.Rest)!=before.HadRest||companion.LastCare.GetValueOrDefault(CareKind.Rest)!=before.RestAt)
+                    throw new Exception("Autonomous sleep fabricated a manual-care reward or cooldown");
+                CharacterWindow(kind).SmokePrepareActualSleep();
+            }
+            // Finish the approach deterministically, then cancel a real grounded
+            // sleep. This does not earn rest benefits until physiology advances.
+            runningAction=new(BodyAction.Sleep);runningAction.Start(Pet);Pet.SmokePrepareActualSleep();var previousAction=runningAction;
+            var careEvidence=careKinds.ToDictionary(kind=>kind,kind=>System.Text.Json.JsonSerializer.Serialize(CompanionFor(kind)));
+            var beforeHidden=careKinds.ToDictionary(kind=>kind,kind=>LifeFor(kind).State);
+            var pending=careKinds.ToDictionary(kind=>kind,kind=>CharacterWindow(kind).PendingDirectContactDiagnostic(CareKind.Pet));
+            SetPaused(true);userHidden=true;UpdatePetVisibility();
+            if(!aiPaused||secondaryCharacters.Any(character=>!character.Paused))throw new Exception("Hiding canceled user pause");
+            if(careUntil>lifeClock.Elapsed.TotalSeconds||runningAction is not null||previousAction.Running||secondaryCharacters.Any(character=>character.CareHoldRemainingSeconds>0||character.HasActiveDecision))throw new Exception("Hiding retained canceled sleep hold or decision");
+            foreach(var kind in careKinds)
+            {
+                var actor=CharacterWindow(kind);
+                if(actor.PhysiologicalAction!=BodyAction.Idle||actor.CurrentPhase is not null||actor.HoverHandVisible||LifeFor(kind).State!=beforeHidden[kind])
+                    throw new Exception("Hiding retained sleep recovery/contact or immediately changed needs");
+                if(actor.ApplyDirectContact(pending[kind],LifeFor(kind).State,CompanionFor(kind)).Failure!=DirectCareFailure.StaleSession
+                    ||System.Text.Json.JsonSerializer.Serialize(CompanionFor(kind))!=careEvidence[kind])
+                    throw new Exception("Hiding restored pending care or changed companion history");
+                var before=LifeFor(kind).State;
+                if(RuntimeFor(kind) is {} runtime)runtime.Tick(1,null,paused:true,quiet:true);
+                else Life.AdvanceCompanion(TimeSpan.FromSeconds(1),actor.PhysiologicalAction,false);
+                if(LifeFor(kind).State!=CompanionCare.Step(before,TimeSpan.FromSeconds(1),BodyAction.Idle,false))
+                    throw new Exception("Hidden cancelled sleep still recovered energy/fatigue");
             }
             userHidden=false;UpdatePetVisibility();
             if(!aiPaused||secondaryCharacters.Any(character=>!character.Paused))throw new Exception("Showing canceled user pause");
+            foreach(var kind in careKinds)
+            {
+                if(CharacterWindow(kind).CurrentPhase is not null||CharacterWindow(kind).PhysiologicalAction!=BodyAction.Idle)
+                    throw new Exception("Showing restored a cancelled sleep sequence");
+                LifeFor(kind).ApplyCare(new(){Energy=80,Fatigue=20});
+            }
             SetPaused(false);TickBrain(.25);
-            if(runningAction is not {Running:true})throw new Exception("Primary did not decide immediately after canceled rest");
+            if(runningAction is not {Running:true})throw new Exception("Primary did not decide immediately after canceled sleep");
             foreach(var character in secondaryCharacters)
             {
                 character.Tick(1,null,paused:false,quiet:false);
-                if(!character.HasActiveDecision)throw new Exception("Secondary did not decide immediately after canceled rest");
+                if(!character.HasActiveDecision)throw new Exception("Secondary did not decide immediately after canceled sleep");
             }
         }
         finally

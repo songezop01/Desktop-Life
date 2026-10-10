@@ -88,6 +88,28 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="LineHeight" Value="21"/>
         </Style>
+        <Style x:Key="CharacterProfileCard" TargetType="RadioButton">
+            <Setter Property="BorderBrush" Value="{StaticResource OutlineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="ProfileSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="15" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True"><Setter TargetName="ProfileSurface" Property="BorderBrush" Value="{StaticResource RoseBrush}"/><Setter TargetName="ProfileSurface" Property="BorderThickness" Value="2"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ProfileSurface" Property="BorderBrush" Value="{StaticResource CocoaBrush}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ProfileSurface" Property="Opacity" Value="0.85"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style TargetType="Expander">
             <Setter Property="Foreground" Value="{StaticResource CocoaBrush}"/>
             <Setter Property="Background" Value="{StaticResource CardBrush}"/>
@@ -147,63 +169,62 @@
             <StackPanel>
                 <Border Style="{StaticResource Card}" Background="#FFF9F4" Padding="18,15" Margin="0,0,0,12">
                     <StackPanel>
-                        <TextBlock Text="今天，誰陪你？" Style="{StaticResource SectionTitle}" Margin="0,0,0,5"/>
-                        <TextBlock Text="輕點角色卡片，或選擇一起陪伴的朋友。" Style="{StaticResource Hint}" Margin="0,0,0,6"/>
+                        <TextBlock Text="我們的小夥伴" Style="{StaticResource SectionTitle}" Margin="0,0,0,5"/>
+                        <TextBlock Text="點選卡片查看這位夥伴的資料與回憶。想一起陪伴的朋友，可以在下方選擇。" Style="{StaticResource Hint}" Margin="0,0,0,6"/>
                         <UniformGrid Columns="3" Margin="0,2,0,8">
-                            <Border Background="{StaticResource PeachSoftBrush}" CornerRadius="15" Padding="8" Margin="0,0,8,0" Tag="Cat" Cursor="Hand" MouseLeftButtonUp="ChooseCompanionCard">
+                            <RadioButton x:Name="CatProfileCard" Style="{StaticResource CharacterProfileCard}" GroupName="CharacterProfiles" Background="{StaticResource PeachSoftBrush}" Margin="0,0,8,0" Tag="Cat" Checked="ChooseCharacterProfile" AutomationProperties.Name="檢視橘貓資料">
                                 <StackPanel>
                                     <Border x:Name="CatPortraitHost" Height="80" Visibility="Collapsed"/>
-                                    <TextBlock Text="栗子 · 橘貓" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="暖暖的小淘氣" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="CatProfileName" Text="栗子" FontWeight="SemiBold" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="橘貓 · 暖暖的小淘氣" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
-                            </Border>
-                            <Border Background="{StaticResource RoseSoftBrush}" CornerRadius="15" Padding="8" Margin="0,0,8,0" Tag="Girl" Cursor="Hand" MouseLeftButtonUp="ChooseCompanionCard">
+                            </RadioButton>
+                            <RadioButton x:Name="GirlProfileCard" Style="{StaticResource CharacterProfileCard}" GroupName="CharacterProfiles" Background="{StaticResource RoseSoftBrush}" Margin="0,0,8,0" Tag="Girl" Checked="ChooseCharacterProfile" AutomationProperties.Name="檢視女孩資料">
                                 <StackPanel>
                                     <Border x:Name="GirlPortraitHost" Height="80" Visibility="Collapsed"/>
-                                    <TextBlock Text="女孩" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="溫柔的日常夥伴" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="GirlProfileName" Text="女孩" FontWeight="SemiBold" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="女孩 · 溫柔的日常夥伴" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
-                            </Border>
-                            <Border Background="{StaticResource LavenderSoftBrush}" CornerRadius="15" Padding="8" Tag="BorderCollie" Cursor="Hand" MouseLeftButtonUp="ChooseCompanionCard">
+                            </RadioButton>
+                            <RadioButton x:Name="DogProfileCard" Style="{StaticResource CharacterProfileCard}" GroupName="CharacterProfiles" Background="{StaticResource LavenderSoftBrush}" Tag="BorderCollie" Checked="ChooseCharacterProfile" AutomationProperties.Name="檢視邊牧犬資料">
                                 <StackPanel>
                                     <Border x:Name="DogPortraitHost" Height="80" Visibility="Collapsed"/>
-                                    <TextBlock Text="邊牧犬" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="開朗的新朋友" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="DogProfileName" Text="邊牧犬" FontWeight="SemiBold" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="邊牧犬 · 開朗的新朋友" Foreground="{StaticResource MutedCocoaBrush}" FontSize="11" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
-                            </Border>
+                            </RadioButton>
                         </UniformGrid>
+                        <TextBlock Text="桌面上陪你的朋友" Style="{StaticResource Hint}" FontSize="11"/>
                         <ComboBox x:Name="PresenceOptions" SelectionChanged="ChangePresence" AutomationProperties.Name="桌面角色" Margin="0,0,0,2"/>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource Card}" Padding="18">
                     <StackPanel>
-                        <TextBlock Text="給牠一點陪伴" Style="{StaticResource SectionTitle}" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="ProfileHeading" Text="夥伴的小日子" Style="{StaticResource SectionTitle}" Margin="0,0,0,5" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="ProfileStateStatus" Style="{StaticResource Hint}" Margin="0,0,0,7"/>
                         <TextBlock x:Name="BondStatus" Foreground="{StaticResource LavenderBrush}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="照顧對象" VerticalAlignment="Center" Margin="0,0,14,8"/>
-                            <ComboBox Grid.Column="1" x:Name="CareTargetOptions" SelectionChanged="ChangeCareTarget" MaxWidth="260" HorizontalAlignment="Left" MinWidth="180" AutomationProperties.Name="目前照顧對象"/>
-                        </Grid>
-                        <WrapPanel>
-                            <Button x:Name="FeedButton" Content="餵飯" Click="FeedPet" Style="{StaticResource PrimaryButton}"/>
-                            <Button x:Name="StrokeButton" Content="摸摸" Click="StrokePet"/>
-                            <Button x:Name="PlayButton" Content="陪玩" Click="PlayPet"/>
-                            <Button x:Name="GroomButton" Content="梳理" Click="GroomPet"/>
-                            <Button x:Name="RestButton" Content="休息" Click="RestPet" Background="{StaticResource LavenderSoftBrush}"/>
-                        </WrapPanel>
-                        <TextBlock x:Name="CareStatus" Text="點一下桌寵，也能給牠摸摸。" Style="{StaticResource Hint}" Margin="0,2,0,8"/>
-                        <CheckBox x:Name="QuietMode" Content="安靜陪伴，讓牠休息，也陪你專心工作" Checked="QuietChanged" Unchecked="QuietChanged"/>
                         <WrapPanel Margin="0,5,0,0">
-                            <TextBox x:Name="PetName" Width="170" MaxLength="16" Margin="0,0,8,8" AutomationProperties.Name="寵物名字"/>
-                            <Button Content="取個名字" Click="RenamePet" Style="{StaticResource QuietButton}"/>
+                            <TextBox x:Name="PetName" Width="170" MaxLength="16" Margin="0,0,8,8" AutomationProperties.Name="這位夥伴的名字"/>
+                            <Button Content="為這位取名字" Click="RenamePet" Style="{StaticResource QuietButton}"/>
+                            <Button Content="重設這位的位置" Click="ResetProfilePosition" Style="{StaticResource QuietButton}"/>
+                            <Button Content="忘記這位的家具習慣" Click="ForgetProfileHabits" Style="{StaticResource QuietButton}"/>
                         </WrapPanel>
+                        <TextBlock x:Name="CareStatus" Text="在小屋裡輕輕互動，讓日常慢慢累積。" Style="{StaticResource Hint}" Margin="0,2,0,8"/>
                     </StackPanel>
                 </Border>
-                <Expander Header="我們的小回憶" IsExpanded="False">
+                <Expander x:Name="ProfileMemoriesSection" Header="這位夥伴的小回憶" IsExpanded="False">
                     <StackPanel>
                         <TextBlock x:Name="IdentityStatus" Text="牠正在慢慢形成自己的生活習慣。" Style="{StaticResource Hint}" Margin="0,0,0,12"/>
                         <TextBlock x:Name="Memories" TextWrapping="Wrap" LineHeight="25" Foreground="{StaticResource MutedCocoaBrush}"/>
                     </StackPanel>
                 </Expander>
+                <Border Style="{StaticResource Card}" Background="#FFF9F4" Padding="18,15">
+                    <StackPanel>
+                        <TextBlock Text="把照顧放進日常" Style="{StaticResource SectionTitle}" Margin="0,0,0,5"/>
+                        <TextBlock Text="點飼料碗補充飼料，或在餐桌選料理，夥伴餓了會自己用餐。滑鼠靠近頭部輕輕摸摸；拖動梳子，替夥伴整理毛髮或頭髮。累了，就讓牠們安心休息。" Style="{StaticResource Hint}"/>
+                        <CheckBox x:Name="QuietMode" Content="小屋安靜陪伴，讓夥伴休息，也陪你專心工作" Checked="QuietChanged" Unchecked="QuietChanged" Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Border>
                 <Expander Header="佈置牠的房間" IsExpanded="True">
                     <StackPanel>
                         <TextBlock Text="小屋樓層"/>
@@ -245,12 +266,12 @@
                     </StackPanel>
                 </Expander>
                 <Expander Header="作品與自主活動">
-                    <WrapPanel>
+                    <StackPanel><TextBlock Text="女孩完成的作品會留在小屋；在這裡保留喜歡的作品，或整理創作角落。" Style="{StaticResource Hint}" Margin="0,0,0,8"/><WrapPanel>
                         <Button Content="保留作品" Click="KeepArt" Style="{StaticResource QuietButton}"/>
                         <Button Content="隱藏／顯示作品" Click="ToggleArt" Style="{StaticResource QuietButton}"/>
                         <Button Content="清除作品" Click="ClearArt" Style="{StaticResource QuietButton}"/>
                         <Button Content="恢復自動活動" Click="AutoPet" Style="{StaticResource QuietButton}"/>
-                    </WrapPanel>
+                    </WrapPanel></StackPanel>
                 </Expander>
                 <Expander Header="存檔與備份">
                     <StackPanel>
@@ -292,7 +313,6 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock Text="數值 0–100；飢餓、無聊、孤單、疲勞越高代表需求越高。" Style="{StaticResource Hint}" Margin="0,12,0,10"/>
-                        <Button Content="忘記家具習慣" Click="ForgetFurnitureHabits" HorizontalAlignment="Left" Style="{StaticResource QuietButton}"/>
                         <TextBlock Text="手動行為預覽" Margin="0,6,0,0"/><ComboBox x:Name="Actions" ItemTemplate="{StaticResource EnumLabel}" Width="190" HorizontalAlignment="Left" SelectionChanged="SelectAction"/>
                         <StackPanel Visibility="Collapsed"><TextBlock x:Name="SensorStatus"/><ItemsControl x:Name="SensorRows"/></StackPanel>
                     </StackPanel>
@@ -306,10 +326,9 @@
                 <WrapPanel>
                     <Button Content="顯示角色" Click="ShowPet" Style="{StaticResource PrimaryButton}" Padding="13,7"/>
                     <Button Content="隱藏角色" Click="HidePet" Style="{StaticResource QuietButton}"/>
-                    <Button Content="重設位置" Click="ResetPet" Style="{StaticResource QuietButton}"/>
                     <Button Content="暫停／恢復自主行為" Click="PauseAi" Background="{StaticResource LavenderSoftBrush}" Padding="13,7"/>
                 </WrapPanel>
-                <TextBlock x:Name="HitStatus" Text="拖曳可抱起桌寵，放開就落地；輕點給牠摸摸。也可以拖球邀牠玩。" Style="{StaticResource Hint}" FontSize="11"/>
+                <TextBlock x:Name="HitStatus" Text="拖曳可抱起夥伴，放開就落地；滑鼠靠近頭部可以摸摸，也可以拖球邀牠玩。" Style="{StaticResource Hint}" FontSize="11"/>
             </StackPanel>
         </Border>
     </Grid>

@@ -58,12 +58,12 @@ public sealed class CharacterRuntime
     public void Tick(double dt,EnvironmentState? environment,bool paused,bool quiet)
     {
         if(Paused!=paused)SetPaused(paused);
-        clock+=dt;Life.AdvanceCompanion(TimeSpan.FromSeconds(dt),Window.PhysiologicalAction,environment?.IdleSeconds.Value<300);
+        clock+=dt;Window.AdvanceCompanionWithTeaserEvidence(Life,TimeSpan.FromSeconds(dt),environment?.IdleSeconds.Value<300);
         if(!Window.IsVisible)return;
         Window.AllowCursorAttraction=!quiet;
         Window.EmotionalState=Life.State;Window.Bond=Learning.State.Companion.Bond;
         Learning.State.Adaptation.Advance(DateTimeOffset.UtcNow);Window.BehaviorPersonality=Learning.State.Adaptation.Effective(Personality);
-        if(paused||Window.Interacting||Window.EditingRoom)return;
+        if(paused||Window.Interacting||Window.DirectCareHolding||Window.EditingRoom)return;
         Window.Routine.Advance(dt,Window.PhysiologicalAction);
         if(Life.State.Energy<=10||Life.State.Fatigue>=95){Window.RequestAction(BodyAction.Sleep,BehaviorInterruptReason.CriticalNeed);return;}
         if(clock<careUntil||Window.SequenceCommitted||Window.FinishingMotion)return;
@@ -80,20 +80,14 @@ public sealed class CharacterRuntime
     public string Care(CareKind kind,out bool accepted)
     {
         accepted=false;
-        if(kind==CareKind.Feed)return "請點飼料碗補充飼料，或點餐桌準備料理；角色餓了會自行用餐。";
-        if(Window.CareUnavailableReason(kind) is {} unavailable)return unavailable;
-        var now=DateTimeOffset.UtcNow;var result=CompanionCare.Apply(Life.State,Learning.State.Companion,kind,now,false);
-        if(!result.Accepted)return result.Message;
-        accepted=true;
-        Life.ApplyCare(result.State);Window.Bond=Learning.State.Companion.Bond;Window.AutonomousIntent=false;
-        Window.BeginCare(kind,result.Action);careUntil=clock+(kind==CareKind.Rest?90:kind==CareKind.Play?20:8);action=null;
-        if(kind==CareKind.Pet)Learning.State.Adaptation.Observe(AdaptiveTrait.Social,now);
-        if(kind==CareKind.Play)Learning.State.Adaptation.Observe(AdaptiveTrait.Playfulness,now);
-        if(kind==CareKind.Feed)Learning.State.Transitions.Complete(LifeBehavior.Eat,now);
-        if(!Learning.State.Companion.Memories.Any(memory=>memory.Kind?.StartsWith("milestone:",StringComparison.Ordinal)!=true&&now-memory.At<TimeSpan.FromMinutes(30)))
-            Learning.State.Companion.Remember(now,CharacterCapability.CareDescription(kind,Kind));
-        if(Kind==PetAppearance.Girl)Window.Say("謝謝你陪著我。",4);
-        return CharacterCapability.CareDescription(kind,Kind);
+        return kind switch
+        {
+            CareKind.Feed=>"請點飼料碗補充飼料，或點餐桌準備料理；角色餓了會自行用餐。",
+            CareKind.Pet=>"把滑鼠移近頭部，稍作停留並輕輕移動，就能摸摸。",
+            CareKind.Groom=>"請新增花朵木梳，結束佈置後拖動梳子靠近角色。",
+            CareKind.Play=>"點擊或拖动球類玩具，角色會和玩具互動。",
+            _=>"角色感到疲倦時會自行休息。"
+        };
     }
     public CharacterProfile Capture()=>new(){Kind=Kind,Pet=new(){State=Life.State,LastSaveTime=DateTimeOffset.UtcNow,TotalRuntimeSeconds=Life.TotalRuntimeSeconds},Personality=Personality,Learning=Learning.State,Position=Window.Position};
 }

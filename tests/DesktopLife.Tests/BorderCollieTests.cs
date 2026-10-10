@@ -95,7 +95,10 @@ public class BorderCollieTests
     [Fact]
     public void DogCannotChooseCatPerchesScratchingOrHumanActivities()
     {
-        foreach(var furniture in new[]{FurnitureKind.CatTree,FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.DiningTable,
+        Assert.Equal(FurnitureUse.Play,FurnitureCompatibility.AvailableUses(PetAppearance.BorderCollie,FurnitureKind.CatTree));
+        Assert.False(FurnitureCompatibility.CanUse(PetAppearance.BorderCollie,FurnitureKind.CatTree,FurnitureUse.Platform));
+        Assert.False(FurnitureCompatibility.CanUse(PetAppearance.BorderCollie,FurnitureKind.CatTree,FurnitureUse.Rest));
+        foreach(var furniture in new[]{FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.DiningTable,
             FurnitureKind.Scratcher,FurnitureKind.Box,FurnitureKind.Yarn,FurnitureKind.ToyMouse,FurnitureKind.Computer,
             FurnitureKind.DrawingBook,FurnitureKind.LegoBox,FurnitureKind.Slide})
             Assert.Equal(FurnitureUse.None,FurnitureCompatibility.AvailableUses(PetAppearance.BorderCollie,furniture));

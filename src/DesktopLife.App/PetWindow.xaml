@@ -6,7 +6,7 @@
  </Window.Resources>
  <Canvas x:Name="Surface" Background="{x:Null}">
   <Ellipse Canvas.Left="26" Canvas.Top="134" Width="64" Height="10" Fill="#30000000" IsHitTestVisible="False"/>
-  <Grid x:Name="Character" Canvas.Left="0" Canvas.Top="0" Width="116" Height="144" MouseDown="OnPetMouseDown" ToolTip="輕點摸摸，按住可抱起我。">
+  <Grid x:Name="Character" Canvas.Left="0" Canvas.Top="0" Width="116" Height="144" MouseDown="OnPetMouseDown" ToolTip="滑鼠靠近頭部並輕輕移動可摸摸，按住角色可抱起。">
    <Canvas x:Name="GirlVisual" Width="76" Height="110" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,32,0,0">
     <Ellipse Canvas.Left="7" Canvas.Top="0" Width="62" Height="67" Fill="{StaticResource Hair}"/>
     <Ellipse Canvas.Left="14" Canvas.Top="12" Width="48" Height="47" Fill="#FFD9C2"/>

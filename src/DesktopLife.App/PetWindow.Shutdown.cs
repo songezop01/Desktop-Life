@@ -6,7 +6,7 @@ public partial class PetWindow
     internal void SetSimulationEnabled(bool enabled)
     {
         simulationEnabled=enabled;
-        if(!enabled){timer.Stop();return;}
+        if(!enabled){timer.Stop();SnapPresentation();return;}
         previous=clock.Elapsed.TotalSeconds;
         if(worldOwner is null||IsVisible)timer.Start();
     }

@@ -25,9 +25,9 @@ public partial class PetWindow
         var candidates = Furniture.Where(f => !EditingRoom && FoodForFurniture!(f.Item.Id) is { RemainingPortions: > 0 } food &&
                 FoodCatalog.CanServe(f.Item.Kind, food.Kind) && FoodCatalog.CanEat(appearance, food.Kind) &&
                 Occupancy.Available(FurnitureCompatibility.Reservation(f.Item, appearance), appearance))
-            .Select(f => (Window: f, Spot: ActivitySpot(f, RoomActivity.Feed, room)))
-            .Where(c => CanReach(c.Spot.X, c.Spot.Feet) && CanTouchFoodAt(c.Window, c.Spot.X, c.Spot.Feet,
-                appearance == PetAppearance.Girl ? RoomActivityPolicy.NearbyChair(c.Window.Item, room) : null))
+            .Select(f => (Window: f, Approach: FoodApproach(f,room)))
+            .Where(c=>c.Approach is not null)
+            .Select(c=>(c.Window,Spot:c.Approach!.Value.Spot,Chair:c.Approach.Value.Chair))
             .OrderBy(c => Math.Abs(c.Spot.X - body.X - HalfWidth) + Math.Abs(c.Spot.Feet - body.Y - BodyHeight))
             .ToArray();
         foreach (var candidate in candidates)
@@ -37,7 +37,7 @@ public partial class PetWindow
             if (reservation is null) continue;
             if (!Occupancy.TryAcquire(FurnitureCompatibility.Reservation(item, appearance), appearance))
             { ReleaseFood?.Invoke(reservation); continue; }
-            var chair = appearance == PetAppearance.Girl ? RoomActivityPolicy.NearbyChair(item, room) : null;
+            var chair = candidate.Chair;
             if (chair is not null && !Occupancy.TryAcquire(FurnitureCompatibility.Reservation(chair, appearance), appearance))
             { ReleaseFood?.Invoke(reservation); Occupancy.Release(appearance); continue; }
             foodReservation = reservation; foodContactAge = 0;
@@ -51,6 +51,19 @@ public partial class PetWindow
         // the floor, and must not remain an Eat pose without an actual target.
         body.Action = BodyAction.Idle; poseAction = BodyAction.Idle; roomActivity = null;
         return true;
+    }
+    private (RestSpot Spot,RoomItem? Chair)? FoodApproach(RoomWindow surface,IReadOnlyList<RoomItem> room)
+    {
+        var chair=appearance==PetAppearance.Girl?RoomActivityPolicy.NearbyChair(surface.Item,room):null;
+        var spot=ActivitySpot(surface,RoomActivity.Feed,room);
+        if(CanReach(spot.X,spot.Feet)&&CanTouchFoodAt(surface,spot.X,spot.Feet,chair))return(spot,chair);
+        if(appearance!=PetAppearance.Girl||chair is null)return null;
+        // A decorative or badly aligned nearby chair must not disable an
+        // otherwise reachable meal. Stand at the table without claiming it.
+        var feet=RoomActivityPolicy.StandingFeet(surface.Item,House,Bounds());
+        var x=Math.Clamp(surface.Item.X+40*sceneScale,Bounds().Left+HalfWidth,Bounds().Left+Bounds().Width-HalfWidth);
+        spot=new(surface.Item.Id+":meal-standing",surface.Item.Kind,x,feet);
+        return CanReach(x,feet)&&CanTouchFoodAt(surface,x,feet,null)?(spot,null):null;
     }
 
     private bool FoodTargetAvailable() => foodReservation is {} reservation &&

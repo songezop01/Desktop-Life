@@ -21,6 +21,7 @@ public partial class PetWindow
             Movement=BehaviorParameters.Default.Movement with{Speed=85,PauseFrequency=0,DirectionChange=0,PathCurvature=0}
         };
         ParameterFactory=_=>parameters;Parameters=parameters;ApplyPosition();ApplyPose();
+        for(var frame=0;frame<5;frame++)sprite.Pose(BodyAction.Idle,clock.Elapsed.TotalSeconds+frame*.1,1);
     }
 
     internal void ClickCareMenuDiagnostic(CareKind kind)

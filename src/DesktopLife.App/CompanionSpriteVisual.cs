@@ -105,6 +105,8 @@ public sealed class CompanionSpriteVisual : FrameworkElement
     private PetAppearance kind;
     private int frame;
     private double facing = 1, facingTarget = 1, breath = 1, breathTarget = 1;
+    private double modelFacingTarget=1;
+    private double? presentedFacing;
     private double lastPoseTime = double.NaN;
     private double poseTransition;
     private bool renderingSubscribed;
@@ -126,6 +128,91 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         Unloaded+=(_,_)=>StopRendering();
     }
     private double walkDistance;
+    private double? presentedWalkCycle;
+    private (double Width,double Height,double Dpi)? footRasterGeometry;
+    private readonly (double Scale,(Point? Left,Point? Right) Feet)?[] renderedFootCache=new (double,(Point?,Point?))?[16];
+    internal void SetPresentedFacing(double? direction,bool hold=false)
+    {
+        presentedFacing=direction is {} value?value<0?-1:1:null;
+        facingTarget=presentedFacing??modelFacingTarget;
+        if(hold&&presentedFacing is {} stable&&poseTransform.ScaleX!=stable)
+        {facing=stable;poseTransform.ScaleX=stable;InvalidateVisual();}
+    }
+    internal void ConfigureRasterFootGeometry(double width,double height,double dpiScale)
+    {
+        if(!double.IsFinite(width)||!double.IsFinite(height)||!double.IsFinite(dpiScale)||width<=0||height<=0||dpiScale<=0)
+            throw new ArgumentOutOfRangeException(nameof(width));
+        var next=(width,height,dpiScale);if(footRasterGeometry==next)return;
+        footRasterGeometry=next;Array.Clear(renderedFootCache);
+    }
+    private Point? RasterLocalFoot(int index,StairFootSide side,double drawScale,double facingScale)
+    {
+        if(walkAtlas is null)return null;
+        if(footRasterGeometry is {} geometry)
+        {
+            var right=facingScale>=0;var slot=index+(right?0:8);var entry=renderedFootCache[slot];
+            if(entry is null||Math.Abs(entry.Value.Scale-drawScale)>1e-10)
+                renderedFootCache[slot]=entry=(drawScale,walkAtlas.RenderedFeet(index,drawScale,geometry.Width,geometry.Height,geometry.Dpi,right));
+            var point=side==StairFootSide.Left?entry.Value.Feet.Left:entry.Value.Feet.Right;
+            // The cache contains the actual full negative-facing raster. Undo
+            // only that full mirror here; the current turn scale is applied by
+            // callers, so its limit remains continuous through edge-on.
+            return !right&&point is {} negative?new Point(116-negative.X,negative.Y):point;
+        }
+        var foot=walkAtlas.Foot(index,side);if(foot is null)return null;
+        var pose=walkAtlas.Frames[index];return new((116-pose.Width*drawScale)/2+(foot.Value.X+.5)*drawScale,144-pose.Height*drawScale+(foot.Value.Y+.5)*drawScale);
+    }
+    internal object RasterFootDiagnostic=>new{walking,Frame=frame,TransitionActive,FacingScale=poseTransform.ScaleX,
+        DrawScale=scale,PresentedFacing=presentedFacing,Geometry=footRasterGeometry,HasSourceLeft=walkAtlas?.Foot(frame,StairFootSide.Left)is not null,HasSourceRight=walkAtlas?.Foot(frame,StairFootSide.Right)is not null};
+    internal void AdvancePresentationForDiagnostic(double elapsed)
+    {
+        if(!double.IsFinite(elapsed)||elapsed<0||elapsed>.05)throw new ArgumentOutOfRangeException(nameof(elapsed));
+        UpdateInterpolation(elapsed);InvalidateVisual();
+    }
+    internal void SetPresentedWalkCycle(double? cycle)
+    {
+        if (cycle is null && presentedWalkCycle is {} retired && walking && walkAtlas is not null)
+        {
+            // Continue the painted phase after leaving a stair. Reverting to the
+            // unrelated accumulated floor phase used to swap a planted frame.
+            var fraction = retired - Math.Floor(retired);
+            var continued = (Math.Floor(walkDistance / walkAtlas.StrideDip) + fraction) * walkAtlas.StrideDip;
+            if (continued < walkDistance) continued += walkAtlas.StrideDip;
+            walkDistance = continued;
+        }
+        presentedWalkCycle=cycle is {} value&&double.IsFinite(value)?value:null;
+        if(!walking||walkAtlas is null)return;
+        var next=WalkFrame();
+        if(frame==next)return;
+        frame=next;UpdateBounds();InvalidateVisual();
+    }
+    private int WalkFrame()
+    {
+        var cycle=presentedWalkCycle??walkDistance/walkAtlas!.StrideDip;
+        return (int)Math.Floor((cycle-Math.Floor(cycle))*walkAtlas!.Frames.Length+.000001)%walkAtlas.Frames.Length;
+    }
+    internal Point? RasterWalkFoot(double cycle,StairFootSide side)
+    {
+        SetPresentedWalkCycle(cycle);
+        if(!walking||walkAtlas is null||TransitionActive||Math.Abs(poseTransform.ScaleX)<.25)return null;
+        var foot=RasterLocalFoot(frame,side,scale,poseTransform.ScaleX);
+        if(foot is null)return null;
+        var x=foot.Value.X;var y=foot.Value.Y;
+        return new(58+(x-58)*poseTransform.ScaleX,144+(y-144)*poseTransform.ScaleY);
+    }
+    internal Point? PreviewRasterWalkFoot(double cycle, StairFootSide side,double? facingOverride=null)
+    {
+        // Preview the real next stance pose without changing the current floor
+        // animation. This lets the root approach its stair alignment gradually.
+        if (!walking || walkAtlas is null || TransitionActive) return null;
+        var next = (int)Math.Floor((cycle - Math.Floor(cycle)) * walkAtlas.Frames.Length + .000001) % walkAtlas.Frames.Length;
+        var pose = walkAtlas.Frames[next];
+        var previewScale = Math.Min(scale, Math.Min(112d / pose.Width, 144d / pose.Height));
+        var direction=facingOverride??poseTransform.ScaleX;
+        var foot=RasterLocalFoot(next,side,previewScale,direction);if(foot is null)return null;
+        var x=foot.Value.X;var y=foot.Value.Y;
+        return new(58 + (x - 58) * direction, 144 + (y - 144) * poseTransform.ScaleY);
+    }
     public void AdvanceWalk(double distanceInCanonicalDip)
     {
         if(double.IsFinite(distanceInCanonicalDip)&&Math.Abs(distanceInCanonicalDip)<80)
@@ -134,9 +221,11 @@ public sealed class CompanionSpriteVisual : FrameworkElement
     public void SetCharacter(PetAppearance appearance)
     {
         kind=appearance; basicAtlas=CompanionSpriteAtlas.For(appearance);
+        Array.Clear(renderedFootCache);
+        presentedFacing=null;
         activityAtlas=appearance==PetAppearance.Girl?CompanionSpriteAtlas.For(appearance,true):null;
         walkAtlas=CompanionWalkAtlas.For(appearance);transitionAtlas=CompanionTransitionAtlas.For(appearance);atlas=basicAtlas;
-        scale=basicAtlas?.Scale??1;frame=0;walking=false;walkDistance=0;
+        scale=basicAtlas?.Scale??1;frame=0;walking=false;walkDistance=0;presentedWalkCycle=null;
         endpoint=transitionAtlas is null?null:appearance==PetAppearance.Girl?0:3;transitionRemaining=0;lastPoseTime=double.NaN;
         if(endpoint is {} initial)scale=initial==0?transitionAtlas!.StandScale:transitionAtlas!.SitScale;
         UpdateBounds();InvalidateVisual();
@@ -144,7 +233,8 @@ public sealed class CompanionSpriteVisual : FrameworkElement
     public void Pose(BodyAction action, double time, double direction, RoomActivity? activity = null, BehaviorPhase? phase = null)
     {
         var previousAtlas=atlas;var previousFrame=frame;var wasWalking=walking;
-        facingTarget = direction < 0 ? -1 : 1;
+        modelFacingTarget=direction<0?-1:1;
+        facingTarget=presentedFacing??modelFacingTarget;
         var elapsed=double.IsNaN(lastPoseTime)?0:Math.Clamp(time-lastPoseTime,0,.1);lastPoseTime=time;
         transitionRemaining=Math.Max(0,transitionRemaining-elapsed);
         atlas=basicAtlas;
@@ -183,7 +273,7 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         if(kind==PetAppearance.Girl&&phase==BehaviorPhase.Stand&&activity is not null){atlas=basicAtlas;frame=0;}
         walking=walkAtlas is not null && (action is BodyAction.Walk or BodyAction.Wander or BodyAction.Explore or BodyAction.ChaseCursor or BodyAction.AvoidCursor)
             && (activity is null || phase is BehaviorPhase.Approach or BehaviorPhase.Notice or BehaviorPhase.Stand);
-        if(walking)frame=(int)Math.Floor(walkDistance/walkAtlas!.StrideDip*walkAtlas.Frames.Length+.000001)%walkAtlas.Frames.Length;
+        if(walking){frame=WalkFrame();poseTransform.ScaleY=1;}
         int? desiredEndpoint=null;
         if(transitionAtlas is not null)
         {
@@ -236,7 +326,10 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         poseTransform.ScaleX=facing;
         // A brief ease around the grounded pivot softens pose changes without
         // drawing two overlapping bodies or moving a planted foot off support.
-        poseTransform.ScaleY=breath*(1-.025*Math.Sin(Math.PI*poseTransition/.18));
+        // The walking atlas already moves the limbs. Breathing that entire
+        // painted frame changes a curved sole's filtered contact pixels even
+        // around the nominal ground pivot; keep its planted raster rigid.
+        poseTransform.ScaleY=walking?1:breath*(1-.025*Math.Sin(Math.PI*poseTransition/.18));
     }
     private (BitmapSource Image,byte[] Alpha,int Width,int Height)? CurrentPose
     {
@@ -276,6 +369,7 @@ public sealed class CompanionSpriteVisual : FrameworkElement
         var py = Math.Clamp((int)((y - drawn.Y) / scale), 0, pose.Height - 1);
         return pose.Alpha[py * pose.Width + px] >= 24 ? new PointHitTestResult(this, p) : null;
     }
+    internal bool PaintedAt(Point point)=>HitTestCore(new PointHitTestParameters(point)) is not null;
     public object AssetDiagnostic => new
     {
         Character=kind.ToString(),Ready,ActivityAtlasReady=activityAtlas is not null,WalkAtlasReady=walkAtlas is not null,

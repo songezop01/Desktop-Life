@@ -56,6 +56,7 @@ public partial class PetWindow
     }
     private void ApplyHouseGeometry()
     {
+        CancelDirectCare();
         ClearHouseRoute();CancelRoute();Occupancy.Release(appearance);sequence?.Interrupt(BehaviorInterruptReason.Safety);
         var previousHeight=BodyHeight;var feet=body.Y+previousHeight;sceneScale=House?.SceneScale??1;ApplyCharacterGeometry();
         if(House is {} h)
@@ -187,6 +188,7 @@ public partial class PetWindow
         var next=HouseTraversal.Advance(travel,new(body.X+HalfWidth,body.Y+BodyHeight),dt,Math.Max(35,speed)*h.SceneScale);
         if(!next.Supported){HouseRouteFailures++;ClearHouseRoute();RecoverNavigation("house-support-lost");return true;}
         body.Place(next.Feet.X-HalfWidth,next.Feet.Y-BodyHeight,Bounds());
+        RememberHousePresentation(travel,next.Reached);
         var support=travel.Kind==HouseTravelKind.Stair?h.Stairs.Single(s=>s.ReservationKey==travel.ConnectorId).Support:h.Floors[travel.SourceFloor].Platform;
         petGravity.PlaceSupported(body.X,body.Y,BodyWidth,BodyHeight,support);
         houseControlledThisFrame=true;navigationStepped=true;poseAction=BodyAction.Walk;MovementPhase=NavigationPhase.Approaching;

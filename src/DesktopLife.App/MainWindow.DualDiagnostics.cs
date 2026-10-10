@@ -31,23 +31,38 @@ public partial class MainWindow
         var works=Pet.Art.Works.Count;
         dog.SetAction(BodyAction.WriteNote);
         if(dog.CurrentAction==BodyAction.WriteNote||Pet.Art.Works.Count!=works)throw new Exception("Dog bypassed creative capability");
-        var primaryBond=Learning.State.Companion.Bond;var primaryNeeds=Life.State;
-        other.Learning.State.Companion.LastCare.Clear();other.Care(CareKind.Pet);
-        if(Learning.State.Companion.Bond!=primaryBond||Life.State!=primaryNeeds)throw new Exception("Care leaked to primary character");
+        var legacyProfiles=careKinds.ToDictionary(kind=>kind,DirectCareFingerprint);
+        other.Care(CareKind.Pet,out var legacyAccepted);
+        if(legacyAccepted||careKinds.Any(kind=>DirectCareFingerprint(kind)!=legacyProfiles[kind]))
+            throw new Exception("Legacy runtime care bypassed physical contact or leaked to another character");
         cat.ResetPosition();girl.ResetPosition();
         await SmokeOtherPresenceAvoidance();
         PresenceOptions.SelectedIndex=(int)PresenceMode.All;
         if(characterWindows.Any(window=>!window.IsVisible))throw new Exception("Three-character presence failed");
-        Appearances.SelectedItem=PetAppearance.BorderCollie;
+        var profilePresence=CurrentPresence;DogProfileCard.IsChecked=true;
         if(settings.PetAppearance!=primaryKind||careTarget!=PetAppearance.BorderCollie)throw new Exception("Selecting dog replaced primary history");
-        if(PetName.Text!=CompanionFor(PetAppearance.BorderCollie).Name||CompanionTitle.Text!=$"{CompanionFor(PetAppearance.BorderCollie).Name}的小日子")throw new Exception("Care panel showed another character");
-        var bonds=careKinds.ToDictionary(kind=>kind,kind=>CompanionFor(kind).Bond);
-        var needs=careKinds.ToDictionary(kind=>kind,kind=>RuntimeFor(kind)?.Life.State??Life.State);
-        CompanionFor(PetAppearance.BorderCollie).LastCare.Clear();
-        CareSelected(CareKind.Pet);
-        foreach(var kind in careKinds.Where(kind=>kind!=PetAppearance.BorderCollie))
-            if(CompanionFor(kind).Bond!=bonds[kind]||(RuntimeFor(kind)?.Life.State??Life.State)!=needs[kind])throw new Exception("Dog care changed another resident");
-        if(CompanionFor(PetAppearance.BorderCollie).Bond<=bonds[PetAppearance.BorderCollie])throw new Exception("Dog care target was not used");
+        if(CurrentPresence!=profilePresence||PetName.Text!=CompanionFor(PetAppearance.BorderCollie).Name||CompanionTitle.Text!=$"{CompanionFor(PetAppearance.BorderCollie).Name}的小日子")throw new Exception("Profile card changed presence or showed another character");
+        var controllerVisible=IsVisible;Hide();
+        try
+        {
+            foreach(var kind in careKinds)PrepareDirectCareSubset(kind);
+            CompanionFor(PetAppearance.BorderCollie).LastCare.Remove(CareKind.Pet);
+            var before=careKinds.ToDictionary(kind=>kind,DirectCareFingerprint);
+            var dogCount=CompanionFor(PetAppearance.BorderCollie).CareCount;
+            var dogLoneliness=LifeFor(PetAppearance.BorderCollie).State.Loneliness;
+            // The selected card is deliberately not the physically stroked dog.
+            CatProfileCard.IsChecked=true;
+            SampleDirectCareStroke(PetAppearance.BorderCollie,dog.DirectHeadDiagnosticPoint());
+            foreach(var kind in careKinds.Where(kind=>kind!=PetAppearance.BorderCollie))
+                if(DirectCareFingerprint(kind)!=before[kind])throw new Exception("Dog contact changed another resident");
+            if(CompanionFor(PetAppearance.BorderCollie).CareCount!=dogCount+1||LifeFor(PetAppearance.BorderCollie).State.Loneliness!=Math.Max(0,dogLoneliness-12))
+                throw new Exception("Actual dog contact did not reach its own resident");
+        }
+        finally
+        {
+            foreach(var actor in characterWindows){actor.CancelDirectCare();actor.SetSimulationEnabled(!verificationFrozen);}
+            if(controllerVisible)Show();
+        }
         SetPaused(true);if(secondaryCharacters.Any(character=>!character.Paused))throw new Exception("A secondary runtime remained active while paused");
         SetPaused(false);if(secondaryCharacters.Any(character=>character.Paused))throw new Exception("A secondary runtime did not resume");
         SmokeRoleConsistency();
@@ -87,6 +102,7 @@ public partial class MainWindow
     private void SmokeRoleConsistency()
     {
         var originalPresence=CurrentPresence;var originalTarget=careTarget;var originalPause=aiPaused;
+        var originalHidden=userHidden;var primaryKind=settings.PetAppearance;
         var originalEnvironment=LatestEnvironment;var originalAway=wasAway;var originalAutomatic=automaticActions;var originalCareUntil=careUntil;
         var positions=careKinds.ToDictionary(kind=>kind,kind=>CharacterWindow(kind).Position);
         var bounds=DisplayWorkspace.Bounds;
@@ -100,37 +116,40 @@ public partial class MainWindow
             }
             SelectCare(PetAppearance.BorderCollie);
             var beforeReset=careKinds.ToDictionary(kind=>kind,kind=>CharacterWindow(kind).Position);
-            ResetPet(this,new RoutedEventArgs());
+            ResetProfilePosition(this,new RoutedEventArgs());
             var expected=new DesktopBody();var dog=CharacterWindow(PetAppearance.BorderCollie);var dogGeometry=CharacterGeometry.For(PetAppearance.BorderCollie,dog.House?.SceneScale??1);expected.Resize(dogGeometry.Width,dogGeometry.Height,bounds);expected.Reset(bounds);
             if(dog.Position!=new RoomPoint(expected.X,expected.Y))throw new Exception($"Reset button did not reset selected dog: actual={dog.Position}, expected={expected.X},{expected.Y}, size={dog.Width},{dog.Height}");
             foreach(var kind in careKinds.Where(kind=>kind!=PetAppearance.BorderCollie))
                 if(CharacterWindow(kind).Position!=beforeReset[kind])throw new Exception("Reset button moved another resident");
+            // Viewing a hidden profile must not change the household composition.
+            PresenceOptions.SelectedIndex=(int)PresenceMode.CatOnly;
+            foreach(var kind in careKinds)
+            {
+                ProfileCard(kind).IsChecked=true;
+                if(careTarget!=kind||CurrentPresence!=PresenceMode.CatOnly||settings.PetAppearance!=primaryKind)
+                    throw new Exception("Profile card changed household presence or stable primary identity");
+                if(PetName.Text!=CompanionFor(kind).Name||!ProfileHeading.Text.StartsWith(CompanionFor(kind).Name,StringComparison.Ordinal))
+                    throw new Exception("Profile card displayed another resident's data");
+            }
+            PresenceOptions.SelectedIndex=(int)PresenceMode.All;SetPaused(true);
+            var beforeGuidance=careKinds.ToDictionary(kind=>kind,DirectCareFingerprint);
             foreach(var character in secondaryCharacters)
             {
-                SelectCare(character.Kind);SetPaused(true);
-                var companion=character.Learning.State.Companion;
-                var lastFeed=companion.LastCare.GetValueOrDefault(CareKind.Feed);var hadFeed=companion.LastCare.ContainsKey(CareKind.Feed);
-                var beforeCare=companion.CareCount;var beforeNeeds=character.Life.State;
-                companion.LastCare[CareKind.Feed]=DateTimeOffset.UtcNow;
-                try
-                {
-                    CareSelected(CareKind.Feed);
-                    if(!aiPaused||secondaryCharacters.Any(resident=>!resident.Paused))throw new Exception("Rejected secondary care resumed household AI");
-                    if(companion.CareCount!=beforeCare||character.Life.State!=beforeNeeds)throw new Exception("Rejected secondary care changed resident data");
-                }
-                finally{if(hadFeed)companion.LastCare[CareKind.Feed]=lastFeed;else companion.LastCare.Remove(CareKind.Feed);}
+                ProfileCard(character.Kind).IsChecked=true;
+                foreach(var kind in Enum.GetValues<CareKind>())CareSelected(kind);
+                if(!aiPaused||secondaryCharacters.Any(resident=>!resident.Paused)
+                    ||careKinds.Any(kind=>DirectCareFingerprint(kind)!=beforeGuidance[kind]))
+                    throw new Exception("Legacy guidance resumed AI or changed resident data");
             }
             var acceptedCharacter=secondaryCharacters[0];SelectCare(acceptedCharacter.Kind);
-            var lastPet=acceptedCharacter.Learning.State.Companion.LastCare.GetValueOrDefault(CareKind.Pet);
-            var hadPet=acceptedCharacter.Learning.State.Companion.LastCare.ContainsKey(CareKind.Pet);
-            var careCount=acceptedCharacter.Learning.State.Companion.CareCount;
-            acceptedCharacter.Learning.State.Companion.LastCare.Remove(CareKind.Pet);
-            try
-            {
-                CareSelected(CareKind.Pet);
-                if(aiPaused||secondaryCharacters.Any(resident=>resident.Paused)||acceptedCharacter.Learning.State.Companion.CareCount!=careCount+1)throw new Exception("Accepted secondary care did not resume household AI");
-            }
-            finally{if(hadPet)acceptedCharacter.Learning.State.Companion.LastCare[CareKind.Pet]=lastPet;else acceptedCharacter.Learning.State.Companion.LastCare.Remove(CareKind.Pet);}
+            var hiddenProfiles=careKinds.ToDictionary(kind=>kind,DirectCareFingerprint);
+            var pending=acceptedCharacter.Window.PendingDirectContactDiagnostic(CareKind.Pet);
+            userHidden=true;UpdatePetVisibility();
+            if(acceptedCharacter.Window.ApplyDirectContact(pending,acceptedCharacter.Life.State,CompanionFor(acceptedCharacter.Kind)).Failure!=DirectCareFailure.StaleSession
+                ||careKinds.Any(kind=>DirectCareFingerprint(kind)!=hiddenProfiles[kind]))
+                throw new Exception("Hidden paused contact changed a resident or remained eligible");
+            userHidden=false;UpdatePetVisibility();
+            if(!aiPaused||secondaryCharacters.Any(resident=>!resident.Paused))throw new Exception("Presence recovery silently resumed AI");
             PresenceOptions.SelectedIndex=(int)PresencePolicy.Only(acceptedCharacter.Kind);
             if(Pet.IsVisible)throw new Exception("Hidden-primary greeting fixture did not hide primary");
             Pet.ResetPosition();Pet.SetAction(BodyAction.Sit);
@@ -149,7 +168,7 @@ public partial class MainWindow
         finally
         {
             LatestEnvironment=originalEnvironment;wasAway=originalAway;automaticActions=originalAutomatic;careUntil=originalCareUntil;
-            PresenceOptions.SelectedIndex=(int)originalPresence;
+            userHidden=originalHidden;PresenceOptions.SelectedIndex=(int)originalPresence;
             SelectCare(originalTarget);
             foreach(var kind in careKinds){CharacterWindow(kind).ResetPosition();CharacterWindow(kind).RestorePosition(positions[kind]);}
             SetPaused(originalPause);

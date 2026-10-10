@@ -30,7 +30,8 @@ public partial class PetWindow
         void PlaceDog()
         {ResetPosition();body.Place(startX,floor-BodyHeight,bounds);StepPetGravity(.016);}
         PlaceDog();
-        if(CanPlayToy(yarn)||CanPlayToy(mouse)||CanPlayTeaser(tree)||!CanPlayToy(bell))throw new Exception("Dog toy identity filter failed.");
+        if(CanPlayToy(yarn)||CanPlayToy(mouse)||!CanPlayTeaser(tree)||!CanPlayToy(bell)||
+            FurnitureCompatibility.CanUse(appearance,FurnitureKind.CatTree,FurnitureUse.Platform))throw new Exception("Dog toy identity filter failed.");
 
         var requests=0;
         InteractionRequested+=_=>requests++;
@@ -45,7 +46,9 @@ public partial class PetWindow
             if(playTarget==rejected||teaserTarget is not null||AttentionTarget==ToyId(rejected))throw new Exception("Dog selected a requested feline toy.");
         }
         teaserTarget=tree;BeginSequence(BodyAction.PlayToy);
-        if(teaserTarget is not null||AttentionTarget==tree.Item.Id.ToString())throw new Exception("Dog selected the cat-tree teaser.");
+        if(teaserTarget!=tree||AttentionTarget!=tree.Item.Id.ToString()||!TryTeaserStance(tree,out var stance)||stance.UsesShelf||Math.Abs(stance.Y+BodyHeight-floor)>1)
+            throw new Exception("Dog could not select the shared teaser from its floor.");
+        EndSequence();teaserTarget=null;
 
         PlaceDog();requestedToy=bell;SetAction(BodyAction.PlayToy);
         if(playTarget!=bell||teaserTarget is not null||AttentionTarget!=ToyId(bell))throw new Exception("Dog could not select its bell ball.");

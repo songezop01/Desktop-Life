@@ -34,11 +34,11 @@ public partial class PetWindow
         lastTimedOutSequence=s;ApproachTimeouts++;
         if(ApproachTimeoutDetails.Count==32)ApproachTimeoutDetails.RemoveAt(0);
         var toy=s.Kind==SequenceKind.Play?playTarget??Ball:null;
-        ObjectApproach? approach=s.Kind!=SequenceKind.Play?null:teaserTarget is {} teaser?new ObjectApproach(teaser.Item.X+25,teaser.Platforms[1].Y-BodyHeight,-1,0):ToyApproach(toy!);
+        ObjectApproach? approach=s.Kind!=SequenceKind.Play?null:teaserTarget is {} teaser?TeaserApproach(teaser):ToyApproach(toy!);
         ApproachTimeoutDetails.Add(new{RecordedUtc=DateTimeOffset.UtcNow,Character=appearance.ToString(),Kind=s.Kind.ToString(),Activity=s.Activity?.ToString(),s.TargetId,s.Age,s.PhaseAge,s.ApproachBudgetSeconds,PhaseBeforeStep=phaseBeforeStep?.ToString(),PhaseAgeBeforeStep=phaseAgeBeforeStep,BeforeNavigationCleanup=phaseBeforeStep is not null,Position=Position,Feet=body.Y+BodyHeight,Grounded=petGravity.Grounded,Navigation=MovementPhase.ToString(),BodyWidth,BodyHeight,SceneScale=sceneScale,MovementSpeed=Parameters.Movement.Speed,TargetApproach=approach,ToyState=toy is null?null:new{Id=ToyId(toy),toy.Model.X,toy.Model.Y,toy.Model.VelocityX,toy.Model.VelocityY,toy.Model.Held,toy.Model.IsResting},TeaserPosition=teaserTarget?.TeaserPosition,RoomGoal=routeGoal is {} roomGoal?new RoomPoint(roomGoal.X,roomGoal.Y):null,RoomStep=route.TryPeek(out var roomStep)?roomStep:(RoomWaypoint?)null,HomeTarget=homeTarget,HomeSpot=new RoomPoint(homeX,homeFeet),RestSpot=restSpot,HouseGoal=houseGoal is {} goal?new RoomPoint(goal.X,goal.Feet):null,HouseStep=houseRoute.TryPeek(out var step)?step:null,RemainingHouseSteps=houseRoute.ToArray()});
     }
     private bool CanPlayToy(ToyWindow toy)=>toy.RoomItem is not {} item||FurnitureCompatibility.CanUse(appearance,item.Kind,FurnitureUse.Play);
-    private bool CanPlayTeaser(RoomWindow? target)=>appearance==PetAppearance.Cat&&target?.Teaser is not null&&FurnitureCompatibility.CanUse(appearance,target.Item.Kind,FurnitureUse.Play);
+    private bool CanPlayTeaser(RoomWindow? target)=>HangingToyInteraction.Allowed(appearance)&&target?.Teaser is not null&&FurnitureCompatibility.CanUse(appearance,target.Item.Kind,FurnitureUse.Play)&&TryTeaserStance(target,out _);
     private BodyAction PlayContactPose=>appearance==PetAppearance.Cat?BodyAction.BatToy:BodyAction.PlayToy;
     public void BeginCare(CareKind kind,BodyAction action)
     {
@@ -103,18 +103,20 @@ public partial class PetWindow
         playTarget??=AllToys.Where(CanPlayToy).OrderBy(toy=>Math.Abs(toy.Model.X-body.X)).FirstOrDefault();
         if(action==BodyAction.PseudoPushIcon){playTarget=Square;teaserTarget=null;}
         var id=teaserTarget?.Item.Id.ToString()??ToyId(playTarget??Ball);
-        if(activeCare!=CareKind.Play&&toyInterest.Attraction(id,0)<=0)
+                if(activeCare!=CareKind.Play&&requestedTeaser is null&&toyInterest.Attraction(id,0)<=0)
         {
             teaserTarget=null;
             playTarget=AllToys.Where(t=>CanPlayToy(t)&&toyInterest.Attraction(ToyId(t),0)>0).OrderBy(t=>Math.Abs(t.Model.X-body.X)).FirstOrDefault();
             if(playTarget is null){body.Action=BodyAction.Sit;return;}id=ToyId(playTarget);
         }
         if(!Occupancy.TryAcquire(id,appearance)){body.Action=BodyAction.ObserveCursor;teaserTarget=null;playTarget=null;return;}
-        var approach=teaserTarget is {} teaser?new ObjectApproach(teaser.Item.X+25,teaser.Platforms[1].Y-BodyHeight,-1,0):ToyApproach(playTarget??Ball);
+        if(teaserTarget is {} hanging)AdjustTeaserLength(hanging);
+        var approach=teaserTarget is {} teaser?TeaserApproach(teaser):ToyApproach(playTarget??Ball);
         sequence=new(SequenceKind.Play,BehaviorPersonality,Bond,id,character:appearance,approachBudgetSeconds:EstimateApproachBudget(approach.X+HalfWidth,approach.Y+BodyHeight,Parameters.Movement.Speed*SequenceStyle.From(BehaviorPersonality,Bond).ApproachSpeed));
     }
     private void EndSequence()
     {
+        RestoreTeaserLength();
         ReleaseFoodReservation();
         Occupancy.Release(appearance);
         if(sequence is {} completed)
@@ -153,7 +155,7 @@ public partial class PetWindow
         var point=teaser?.TeaserPosition??new Point(toy.Model.X+20,toy.Model.Y+20);
         attentionPoint=point;
         ObjectApproach approach;var available=true;
-        if(teaser is not null)approach=new(teaser.Item.X+25,teaser.Platforms[1].Y-BodyHeight,-1,0);
+        if(teaser is not null){available=TryTeaserApproach(teaser,out approach);if(available)AdjustTeaserLength(teaser);}
         else available=TryToyApproach(toy,out approach);
         if(exists&&teaser is null&&s.Phase==BehaviorPhase.Approach)
         {
@@ -192,6 +194,15 @@ public partial class PetWindow
         if(s.Phase is BehaviorPhase.Prepare or BehaviorPhase.Crouch)poseAction=BodyAction.Sit;
         if(s.Phase is BehaviorPhase.Paw or BehaviorPhase.Contact)
         {
+            if(teaser is not null)
+            {
+                var contactPoint=TeaserContact(teaser);
+                var reach=s.Phase==BehaviorPhase.Paw?Math.Clamp(s.PhaseAge/.25,0,1):1;
+                if(contactPoint is {} reachable)SetTeaserReach(reachable,reach);
+                if(s.Phase==BehaviorPhase.Contact&&!phaseContact)phaseContact=ApplyTeaserContact(teaser,contactPoint,reach,dt);
+                if(s.Phase==BehaviorPhase.Complete)EndSequence();
+                return true;
+            }
             var bodyScale=BodyHeight/CharacterGeometry.CanonicalHeight;
             var contact=teaser is not null?new RoomPoint(point.X,point.Y):ToyContactPhysics.ReachableContactPoint(toy.Model.X,toy.Model.Y,body.X,body.Y,BodyHeight,appearance==PetAppearance.Cat?72:96);
             var local=new Point(((contact?.X??point.X)-body.X)/bodyScale,((contact?.Y??point.Y)-body.Y)/bodyScale);

@@ -1,6 +1,6 @@
 namespace DesktopLife.Core;
 
-public enum FurnitureKind { CatTree, Slide, Desk, Bookshelf, Cushion, Yarn, BellBall, ToyMouse, Box, Scratcher, PetBed, HumanBed, Chair, DiningTable, Computer, DrawingBook, LegoBox, Sofa, CatBowl }
+public enum FurnitureKind { CatTree, Slide, Desk, Bookshelf, Cushion, Yarn, BellBall, ToyMouse, Box, Scratcher, PetBed, HumanBed, Chair, DiningTable, Computer, DrawingBook, LegoBox, Sofa, CatBowl, Comb }
 public sealed record RoomItem(Guid Id,FurnitureKind Kind,double X,double Y,int FloorIndex=0);
 public sealed record RoomPoint(double X,double Y);
 public sealed class RoomState

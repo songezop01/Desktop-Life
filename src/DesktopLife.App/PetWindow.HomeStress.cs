@@ -10,7 +10,7 @@ public partial class PetWindow
     {
         var b=Bounds();EnableStressRecording();Routine=new(70);
         foreach(var kind in new[]{FurnitureKind.Yarn,FurnitureKind.BellBall,FurnitureKind.ToyMouse})AddRoomItem(new(Guid.NewGuid(),kind,b.Left+100+ExtraToys.Count*90,b.Top+b.Height-40));
-        var kinds=new[]{FurnitureKind.Box,FurnitureKind.PetBed,FurnitureKind.Scratcher,FurnitureKind.CatTree,FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.HumanBed,FurnitureKind.Chair,FurnitureKind.DiningTable,FurnitureKind.Computer,FurnitureKind.DrawingBook,FurnitureKind.LegoBox,FurnitureKind.Sofa,FurnitureKind.CatBowl};
+        var kinds=new[]{FurnitureKind.Box,FurnitureKind.PetBed,FurnitureKind.Scratcher,FurnitureKind.CatTree,FurnitureKind.Bookshelf,FurnitureKind.Desk,FurnitureKind.HumanBed,FurnitureKind.Chair,FurnitureKind.DiningTable,FurnitureKind.Computer,FurnitureKind.DrawingBook,FurnitureKind.LegoBox,FurnitureKind.Sofa,FurnitureKind.CatBowl,FurnitureKind.Comb};
         for(var i=0;i<21;i++)
         {
             var kind=kinds[i%kinds.Length];var size=RoomWindow.Size(kind);

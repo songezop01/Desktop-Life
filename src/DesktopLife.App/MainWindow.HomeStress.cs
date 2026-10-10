@@ -29,6 +29,7 @@ public partial class MainWindow
         var secondaryParticipants=participants.Where(window=>window!=Pet).ToArray();
         foreach(var character in secondaryParticipants)character.EnableStressRecording();
         UpdatePetVisibility();
+        var features012=PrepareHomeStress012(root,participatingCharacters);
         var process=Process.GetCurrentProcess();var watch=Stopwatch.StartNew();var samples=new List<object>();
         var firstCpu=process.TotalProcessorTime.TotalSeconds;var allocated=GC.GetTotalAllocatedBytes();var exceptions=0;
         object? setupPerformance=null,durableReloadVerification=null,workloadPerformance=null;double steadyMeasurementStartedAtSeconds=0;
@@ -65,12 +66,14 @@ public partial class MainWindow
                 if(t%300==299){Hide();userHidden=false;UpdatePetVisibility();}
                 if(t%75==0)
                 {
-                    Life.ApplyCare(Life.State with{Energy=80,Fatigue=20,Hunger=20});Pet.EmotionalState=Life.State;
                     var actions=new[]{BodyAction.Hide,BodyAction.Stretch,BodyAction.Sleep,BodyAction.PlayToy,BodyAction.ObserveCursor,BodyAction.Groom};
-                    runningAction=null;Pet.SetAction(actions[(t/75)%actions.Length]);
+                    if(!Pet.HasFoodReservationDiagnostic&&!Pet.HomeStressTeaserActive)
+                    {runningAction=null;Pet.SetAction(actions[(t/75)%actions.Length]);}
                     var girl=CharacterWindow(PetAppearance.Girl);
-                    girl.StartRoomActivity((RoomActivity)((t/75)%Enum.GetValues<RoomActivity>().Length));
+                    var activities=Enum.GetValues<RoomActivity>().Where(a=>a!=RoomActivity.Feed).ToArray();
+                    if(!girl.HasFoodReservationDiagnostic)girl.StartRoomActivity(activities[(t/75)%activities.Length]);
                 }
+                await StepHomeStress012(features012,t,cancellation);
                 process.Refresh();var sample=new {Second=t+1,WallSeconds=watch.Elapsed.TotalSeconds,CpuSeconds=process.TotalProcessorTime.TotalSeconds-firstCpu,WorkingSetMB=process.WorkingSet64/1048576d,PrivateMB=process.PrivateMemorySize64/1048576d,AllocatedBytes=GC.GetTotalAllocatedBytes()-allocated,
                     NavigationFailures=participants.Sum(window=>window.NavigationFailures),ApproachTimeouts=participants.Sum(window=>window.ApproachTimeouts),
                     CharacterApproachTimeouts=participatingCharacters.ToDictionary(character=>character.Kind.ToString(),character=>character.Window.ApproachTimeouts),
@@ -99,12 +102,12 @@ public partial class MainWindow
                     ArtWindows=Application.Current.Windows.OfType<ArtWindow>().Count(),ArtworkCount=Pet.Art.Works.Count,
                     KeptArtworkCount=Pet.Art.Works.Count(work=>work.Keep),ArtworkPoints=Pet.Art.Works.Sum(work=>work.Drawing?.Strokes.Sum(stroke=>stroke.Length)??0),
                     DecodedCompanionAtlases=CompanionSpriteVisual.DecodedAtlasCount,RandomMutations=randomMutations,ArtworkAttempts=artworkAttempts,ArtworkCreated=artworkCreated,ArtworkClears=artworkClears,
-                    FurnitureContextRebuilds=Pet.Furniture.Sum(f=>f.ContextRebuilds),PerformancePhase=setupPerformance is null?"Setup":"Steady",Performance=CapturePerformance()};
-                var failure=sample.InvalidFurnitureInteractions>0?"Invalid character-furniture interaction":
+                    FurnitureContextRebuilds=Pet.Furniture.Sum(f=>f.ContextRebuilds),Features012=CaptureHomeStress012(features012),PerformancePhase=setupPerformance is null?"Setup":"Steady",Performance=CapturePerformance()};
+                var failure=features012.Failure??(sample.InvalidFurnitureInteractions>0?"Invalid character-furniture interaction":
                     sample.ApproachTimeouts>0?"Character approach timed out":
                     sample.HouseRouteFailures>0?"House route failed":
                     sample.NavigationRecoveryTimeouts>0?"Navigation recovery timed out":
-                    sample.StuckSequences>0?"Character sequence stuck":null;
+                    sample.StuckSequences>0?"Character sequence stuck":null);
                 // Retain the first failing state immediately. The final report in finally
                 // captures per-character evidence before the isolated process exits.
                 if(t==0||t%30==29||t==seconds-1||failure is not null)
@@ -124,6 +127,9 @@ public partial class MainWindow
             workloadSeconds=watch.Elapsed.TotalSeconds;workloadCpuSeconds=process.TotalProcessorTime.TotalSeconds-firstCpu;
             workloadAllocatedMB=(GC.GetTotalAllocatedBytes()-allocated)/1048576d;workloadPerformance=CapturePerformance();
             cancellation.ThrowIfCancellationRequested();
+            var missing012=MissingHomeStress012Coverage(features012);
+            if(seconds>=600&&missing012.Length>0)
+                throw new InvalidOperationException("0.12 stress coverage incomplete: "+string.Join(", ",missing012));
             progress?.Invoke(watch.Elapsed.TotalSeconds,"場景完成；正在保存並核對隔離資料");
             // Freeze the isolated instance, await a real durable write, then validate the exact captured graph from disk.
             lifeTimer.Stop();learningTimer.Stop();visibilityTimer.Stop();SetPaused(true);
@@ -141,6 +147,7 @@ public partial class MainWindow
         catch{exceptions++;throw;}
         finally
         {
+            EndHomeStress012(features012);
             process.Refresh();
             var navigationFailures=participants.Sum(window=>window.NavigationFailures);
             var expectedGeometryRecoveries=participants.Sum(window=>window.NavigationFailureReasons.GetValueOrDefault("geometry-changed-in-flight"));
@@ -148,7 +155,7 @@ public partial class MainWindow
             var secondaryNavigationReasons=MergeNavigationReasons(secondaryParticipants.Select(window=>window.NavigationFailureReasons));
             var recoveryCompletionReasons=MergeNavigationReasons(participants.Select(window=>window.NavigationRecoveryCompletionReasons));
             var recoveryTimeoutReasons=MergeNavigationReasons(participants.Select(window=>window.NavigationRecoveryTimeoutReasons));
-            var result=new{StairTrips=participants.Sum(w=>w.StairTrips),HouseRouteFailures=participants.Sum(w=>w.HouseRouteFailures),Seed=70,Workload=seconds>=1200?"native-home-v2-resource-cycles":"native-home-v1",StartedUtc=startedUtc,
+            var result=new{StairTrips=participants.Sum(w=>w.StairTrips),HouseRouteFailures=participants.Sum(w=>w.HouseRouteFailures),Seed=70,Workload=seconds>=1200?"native-home-v3-012-resource-cycles":"native-home-v3-012",Features012=CaptureHomeStress012(features012),StartedUtc=startedUtc,
                 SteadyStartedUtc=startedUtc.AddSeconds(steadyMeasurementStartedAtSeconds),DurableReloadVerification=durableReloadVerification,
                 RandomMutationSeed=701,RandomMutations=randomMutations,ArtworkAttempts=artworkAttempts,ArtworkCreated=artworkCreated,ArtworkClears=artworkClears,
                 Presence=presence.ToString(),Floors=floors,Workspace=DisplayWorkspace.Bounds,Displays=DisplayWorkspace.Enumerate().Select(display=>new{display.Scale,display.PixelBounds,display.PixelWorkArea,display.Primary,display.Portrait}).ToArray(),Characters=participatingCharacters.Select(character=>character.Kind.ToString()).ToArray(),

@@ -60,8 +60,8 @@ public sealed partial class RoomWindow
         canvas.ToolTip = summary;
         if (foodSummary is not null) foodSummary.Header = summary;
         var table = Item.Kind == FurnitureKind.DiningTable;
-        foodContents.Width = table ? 62 : 52; foodContents.Height = table ? 23 : 9;
-        Canvas.SetLeft(foodContents, table ? 44 : 14); Canvas.SetTop(foodContents, table ? 9 : 7);
+        foodContents.Width = table ? 62 : 52; foodContents.Height = table ? 32 : 14;
+        Canvas.SetLeft(foodContents, table ? 44 : 14); Canvas.SetTop(foodContents, table ? 0 : 3);
         foodContents.Update(value, table);
     }
 
@@ -71,26 +71,36 @@ public sealed partial class RoomWindow
         var option = canvas.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.Tag is FoodKind value && value == kind);
         option.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
     }
+    internal void OpenFoodMenuDiagnostic()
+    {
+        UpdateLayout();var p=Item.Kind==FurnitureKind.DiningTable?new Point(75,20.5):new Point(40,11.5);
+        var hit=canvas.InputHitTest(p) as UIElement??throw new Exception("Scaled food surface has no actual input target.");
+        hit.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=Mouse.PreviewMouseUpEvent});
+        if(canvas.ContextMenu?.IsOpen!=true)throw new Exception("Left-clicking food surface did not open its menu.");
+    }
+    internal void CloseFoodMenuDiagnostic(){if(canvas.ContextMenu is {} menu)menu.IsOpen=false;}
 
-    // This is an inventory indicator. The meal-specific illustrated props are a
-    // separate art milestone; changing this never alters the furniture collider.
+    // Meal art is separate from the saved stock and furniture collision geometry.
     private sealed class FoodContentsVisual : FrameworkElement
     {
         private FoodServing? value;
         private bool table;
-        private static readonly Brush empty = Frozen("#ECE1CE"), plate = Frozen("#FAF0E3"), kibble = Frozen("#B68A65"), meal = Frozen("#D69B6E");
+        private static readonly Brush empty = Frozen("#ECE1CE"), plate = Frozen("#FAF0E3"), meal = Frozen("#D69B6E");
         private static Brush Frozen(string color) { var brush = (SolidColorBrush)new BrushConverter().ConvertFrom(color)!; brush.Freeze(); return brush; }
         public FoodContentsVisual() { IsHitTestVisible = false; }
         public void Update(FoodServing? serving, bool onTable) { value = serving; table = onTable; InvalidateVisual(); }
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
-            if (table && value is null) return;
-            dc.DrawEllipse(table ? plate : empty, null, new(Width / 2, Height / 2), Width / 2, Height / 2);
+            if(!table)dc.DrawEllipse(empty,null,new(Width/2,Height*.6),Width/2,Height*.35);
             if (value is not { RemainingPortions: > 0 }) return;
-            var count = (int)Math.Ceiling(12d * value.RemainingPortions / value.Capacity);
-            for (var i = 0; i < count; i++)
-                dc.DrawEllipse(table ? meal : kibble, null, new(8 + i % 6 * (Width - 16) / 5, Height * (.35 + i / 6 * .3)), table ? 4 : 2.3, table ? 2.5 : 1.3);
+            var fraction=Math.Clamp((double)value.RemainingPortions/value.TotalPortions,0,1);
+            FoodArt.Draw(dc,value.Kind,new(0,0,Width,Height-(table?3:0)),fraction);
+            if(table)
+            {
+                dc.DrawRoundedRectangle(plate,null,new(Width*.2,Height-2,Width*.6,2),1,1);
+                dc.DrawRoundedRectangle(meal,null,new(Width*.2,Height-2,Width*.6*fraction,2),1,1);
+            }
         }
     }
 }

@@ -57,12 +57,6 @@ public partial class PetWindow
         .Where(toy=>toy!=Square&&CanPlayToy(toy)&&!toy.Model.Held&&Occupancy.Available(ToyId(toy),appearance))
         .OrderBy(toy=>Math.Abs(toy.Model.X-body.X)).FirstOrDefault();
 
-    private void RefreshCareMenuLabels()
-    {
-        if(Character.ContextMenu is not {} menu)return;
-        foreach(var item in menu.Items.OfType<MenuItem>())
-            if(item.Tag is CareKind kind)item.Header=appearance==PetAppearance.Girl?kind switch
-            {CareKind.Feed=>"用餐",CareKind.Pet=>"陪伴互動",CareKind.Play=>"房間活動",CareKind.Groom=>"整理頭髮",_=>"安排休息"}:kind switch
-            {CareKind.Feed=>"餵飯飯",CareKind.Pet=>"摸摸頭",CareKind.Play=>"一起玩球",CareKind.Groom=>"梳理毛毛",_=>"哄牠睡覺"};
-    }
+    private void RefreshCareMenuLabels()=>Character.ContextMenu=null;
+    internal void GuideLegacyCareDiagnostic(CareKind kind)=>CareRequested?.Invoke(kind);
 }
